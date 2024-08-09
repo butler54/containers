@@ -10,7 +10,6 @@ on:
 env:
   REGISTRY_USER: rh-ee-chbutler
   IMAGE_REGISTRY: quay.io
-  REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
 
 jobs:
   build-and-push:
@@ -39,12 +38,11 @@ jobs:
     - name: Build Image
       id: build-image
       uses: redhat-actions/buildah-build@v2
-      working-directory: ${{ matrix.containers }}
       with:
         image: ${{ matrix.containers }}
         tags: latest 
         containerfiles: |
-         ./Containerfile
+         ./${{ matrix.containers }}/Containerfile
 
 
     - name: Push To quay.io
