@@ -10,10 +10,9 @@ buildah run ${builder} -- touch /hello
 # --installroot ${mountpoint}
 # Install dependencies into the runtime container
 buildah run ${builder} -- bash -C <<EOF
-    yum remove -y --installroot ${mountpoint} --releasever 9 \
-        --setopt install_weak_deps=false \
-        --nodocs \
-        bash
+    yum list
+    yum remove -y --installroot ${mountpoint} --releasever 9 bash
+    yum install gcc --installroot ${mountpoint} --releasever 9 -y
     yum clean all --installroot ${mountpoint}
 EOF
 
