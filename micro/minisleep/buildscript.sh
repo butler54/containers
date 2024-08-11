@@ -9,7 +9,7 @@ mountpoint=$(buildah mount ${container})
 # Install dependencies into the runtime container
 buildah run ${builder} -- bash -C <<EOF
     yum list  --installroot ${mountpoint}
-    yum remove -y --installroot ${mountpoint} --releasever 9 bash
+    yum remove --installroot ${mountpoint} bash sh
     yum clean all --installroot ${mountpoint}
 EOF
 
