@@ -1,3 +1,4 @@
+#!/bin/sh
 set -e
 builder=$(buildah from registry.redhat.io/ubi9/ubi)
 container=$(buildah from registry.redhat.io/ubi9-micro)
