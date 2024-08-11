@@ -33,58 +33,9 @@ jobs:
         registry: registry.redhat.io
 
 
-
-
-    - name: Push To quay.io
-      id: push-to-quay
-      uses: redhat-actions/push-to-registry@v2
-      with:
-        image: ${{ matrix.containers }}
-        tags: latest
-        registry: quay.io/${{ env.REGISTRY_USER }}
-
     - name: Build Image
       id: build-image
-      run: 
-        microcontainer=$(buildah from registry.redhat.com/ubi9-micro)
-        micromount=$(buildah mount $microcontainer)
-        yum install \
-          --installroot $micromount \
-          --releasever 9 \
-          --setopt install_weak_deps=false \
-          --nodocs -y \
-        httpd
-        yum clean all \
-          --installroot $micromount
-        buildah umount $microcontainer
-        buildah commit $microcontainer ubi-micro-httpd
-
-
-  nested-build-push:
-    runs-on: ubuntu-latest
-    container:
-      image: quay.io/rh-ee-chbutler/build-utils:latest
-
-      credentials:
-        username: ${{ env.REGISTRY_USER }}
-        password: ${{ secrets.REGISTRY_PASSWORD }}
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-
-    - name: Log in to Quay.io
-      run: podman login -u ${{ env.REGISTRY_USER }} -p ${{ secrets.REGISTRY_PASSWORD }} quay.io
-
-    - name: Log in to registry.redhat.io
-      uses: redhat-actions/podman-login@v1
-      with:
-        username: ${{ env.REGISTRY_USER }}
-        password: ${{ secrets.REGISTRY_PASSWORD }}
-        registry: registry.redhat.io
-
-
-
+      run: micro/minisleep/buildscript.sh
 
     - name: Push To quay.io
       id: push-to-quay
@@ -93,3 +44,5 @@ jobs:
         image: ubi-micro-httpd
         tags: latest
         registry: quay.io/${{ env.REGISTRY_USER }}
+
+
