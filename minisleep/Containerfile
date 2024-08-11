@@ -1,0 +1,5 @@
+FROM registry.redhat.io/ubi9/ubi
+
+RUN microdnf install -y coreutils
+
+RUN bash -c 'echo "sleep 1" > /usr/bin/sleep'
