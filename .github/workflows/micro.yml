@@ -24,13 +24,9 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Log in to Quay.io
-      uses: redhat-actions/podman-login@v1
-      with:
-        username: ${{ env.REGISTRY_USER }}
-        password: ${{ secrets.REGISTRY_PASSWORD }}
-        registry: ${{ env.IMAGE_REGISTRY }}
 
+    - name: Log in to Quay.io
+      run: podman login -u ${{ env.REGISTRY_USER }} -p ${{ secrets.REGISTRY_PASSWORD }} quay.io
 
     - name: Log in to registry.redhat.io
       uses: redhat-actions/podman-login@v1
