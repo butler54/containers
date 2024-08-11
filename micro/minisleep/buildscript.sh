@@ -7,13 +7,14 @@ mountpoint=$(buildah mount ${container})
 
 buildah run ${builder} -- touch /hello
 
+# --installroot ${mountpoint}
 # Install dependencies into the runtime container
-buildah run ${builder} --volume $mountpoint:/hello:z -- bash -C <<EOF
-    yum remove -y --installroot /hello --releasever 9 \
+buildah run ${builder} -- bash -C <<EOF
+    yum remove -y --installroot ${mountpoint} --releasever 9 \
         --setopt install_weak_deps=false \
         --nodocs \
         bash
-    yum clean all --installroot /hello
+    yum clean all --installroot ${mountpoint}
 EOF
 
 buildah commit --format docker ${container} microsleep
