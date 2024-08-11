@@ -15,7 +15,7 @@ jobs:
   nested-build-push:
     runs-on: ubuntu-latest
     container:
-      image: registry.redhat.io/ubi9/ubi
+      image: quay.io/rh-ee-chbutler/build-utils:latest
 
       credentials:
         username: ${{ env.REGISTRY_USER }}

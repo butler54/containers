@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        containers: ['coredumps']
+        containers: ['coredumps', 'build-utils']
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
