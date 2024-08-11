@@ -12,7 +12,6 @@ buildah run ${builder} -- touch /hello
 buildah run ${builder} -- bash -C <<EOF
     yum list
     yum remove -y --installroot ${mountpoint} --releasever 9 bash
-    yum install gcc --installroot ${mountpoint} --releasever 9 -y
     yum clean all --installroot ${mountpoint}
 EOF
 
