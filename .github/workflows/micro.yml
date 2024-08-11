@@ -41,7 +41,7 @@ jobs:
       id: push-to-quay
       uses: redhat-actions/push-to-registry@v2
       with:
-        image: ubi-micro-httpd
+        image: microsleep
         tags: latest
         registry: quay.io/${{ env.REGISTRY_USER }}
 

@@ -11,10 +11,15 @@ buildah run ${builder} --volume $mountpoint:/hello:z -- bash -C <<EOF
         --installroot /hello --releasever 9 \
         --setopt install_weak_deps=false \
         --nodocs \
-        httpd
+        core-utils
+    yum remove -y --installroot /hello --releasever 9 \
+        --setopt install_weak_deps=false \
+        --nodocs \
+        bash
+
     yum clean all --installroot /hello
 EOF
 
-buildah commit --format docker ${container} ubi-micro-httpd
+buildah commit --format docker ${container} minisleep
 buildah unmount ${container}
 
