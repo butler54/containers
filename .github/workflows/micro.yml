@@ -1,0 +1,65 @@
+name: Build and Push 'micro' containers with podman
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 4 * * *'
+
+env:
+  REGISTRY_USER: rh-ee-chbutler
+  IMAGE_REGISTRY: quay.io
+
+jobs:
+  nested-build-push:
+    runs-on: ubuntu-latest
+    container:
+      image: registry.redhat.io/ubi9/ubi
+
+      credentials:
+        username: ${{ env.REGISTRY_USER }}
+        password: ${{ secrets.REGISTRY_PASSWORD }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Log in to Quay.io
+      uses: redhat-actions/podman-login@v1
+      with:
+        username: ${{ env.REGISTRY_USER }}
+        password: ${{ secrets.REGISTRY_PASSWORD }}
+        registry: ${{ env.IMAGE_REGISTRY }}
+
+
+    - name: Log in to registry.redhat.io
+      uses: redhat-actions/podman-login@v1
+      with:
+        username: ${{ env.REGISTRY_USER }}
+        password: ${{ secrets.REGISTRY_PASSWORD }}
+        registry: registry.redhat.io
+
+    - name: Build Image
+      id: build-image
+      run: |
+        microcontainer=$(buildah from registry.redhat.com/ubi9-micro)
+        micromount=$(buildah mount $microcontainer)
+        yum install \
+          --installroot $micromount \
+          --releasever 9 \
+          --setopt install_weak_deps=false \
+          --nodocs -y \
+        httpd
+        yum clean all \
+          --installroot $micromount
+        buildah umount $microcontainer
+        buildah commit $microcontainer ubi-micro-httpd
+
+
+    - name: Push To quay.io
+      id: push-to-quay
+      uses: redhat-actions/push-to-registry@v2
+      with:
+        image: ubi-micro-httpd
+        tags: latest
+        registry: quay.io/${{ env.REGISTRY_USER }}

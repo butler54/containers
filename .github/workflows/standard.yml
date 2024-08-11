@@ -1,4 +1,4 @@
-name: Build and Push Containers with Podman
+name: Build and Push 'standard' containers with podman
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        containers: ['coredumps', 'minisleep']
+        containers: ['coredumps']
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -42,7 +42,7 @@ jobs:
         image: ${{ matrix.containers }}
         tags: latest 
         containerfiles: |
-         ./${{ matrix.containers }}/Containerfile
+         ./standard/${{ matrix.containers }}/Containerfile
 
 
     - name: Push To quay.io
