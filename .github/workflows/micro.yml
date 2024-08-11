@@ -35,7 +35,7 @@ jobs:
 
     - name: Build Image
       id: build-image
-      run: buildah unshare micro/minisleep/buildscript.sh
+      run: buildah unshare ./micro/minisleep/buildscript.sh
 
     - name: Push To quay.io
       id: push-to-quay
