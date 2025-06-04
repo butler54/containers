@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        containers: ['coredumps', 'build-utils', 'ssh-clients']
+        containers: ['coredumps', 'build-utils', 'ssh-client']
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
