@@ -1,0 +1,3 @@
+FROM registry.redhat.io/ubi9/ubi
+
+RUN dnf install -y /usr/bin/gcore /usr/bin/ps /usr/bin/strings
