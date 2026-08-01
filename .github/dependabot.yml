@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # Base image FROM digest pins across the sandbox Containerfiles.
+  # (Thin layers track the base by :latest tag at build time, so the base is the
+  # one with a pinned upstream digest for Dependabot to bump.)
+  - package-ecosystem: "docker"
+    directories:
+      - "/sandbox/base"
+      - "/sandbox/standard"
+      - "/sandbox/docs"
+      - "/sandbox/speckit"
+      - "/sandbox/speckit-docs"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "sandbox"
+
+  # GitHub Actions used by the workflows (docker/*, actions/*, redhat-actions/*).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "github-actions"
