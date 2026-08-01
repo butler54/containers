@@ -1,9 +1,10 @@
-name: Build and Push 'sandbox' containers (multi-arch → ghcr.io)
+name: Build and Push 'sandbox' containers (multi-arch → ghcr.io, podman/buildah)
 
 # Sandbox images for the sandboxctl/openshell toolchain.
 # Separate from the quay-based micro/standard workflows: these publish to
 # GitHub Container Registry (ghcr.io/butler54) using the built-in GITHUB_TOKEN.
-# Built multi-arch (linux/amd64 + linux/arm64) on native runners, base first.
+# Built multi-arch (linux/amd64 + linux/arm64) with buildah on native runners,
+# base first; per-arch images are combined into a manifest list with podman.
 
 on:
   push:
@@ -21,15 +22,15 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  REGISTRY: ghcr.io
-  OWNER: butler54
+  IMAGE_REGISTRY: ghcr.io
+  REGISTRY_NAMESPACE: butler54
 
 permissions:
   contents: read
   packages: write
 
 jobs:
-  # ---- Base image: build each arch by-digest, then merge into a manifest list ----
+  # ---- Base image: build each arch natively with buildah, push a per-arch tag ----
   base:
     strategy:
       fail-fast: false
@@ -39,73 +40,64 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Ensure buildah/podman
+        run: |
+          command -v buildah >/dev/null && command -v podman >/dev/null || \
+            { sudo apt-get update && sudo apt-get install -y buildah podman; }
+
       - name: Free disk space (base image is large)
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost || true
-          sudo docker image prune -af || true
           df -h /
 
-      - uses: docker/setup-buildx-action@v3
-
       - name: Log in to ghcr.io
-        uses: docker/login-action@v3
+        uses: redhat-actions/podman-login@v1
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ${{ env.IMAGE_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push base by digest
-        id: build
-        uses: docker/build-push-action@v6
+      - name: Build base (${{ matrix.arch }})
+        uses: redhat-actions/buildah-build@v2
         with:
-          context: .
-          file: sandbox/base/Containerfile
-          platforms: linux/${{ matrix.arch }}
-          provenance: false
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.OWNER }}/openshell-sandbox-base,push-by-digest=true,name-canonical=true,push=true
+          image: openshell-sandbox-base
+          tags: latest-${{ matrix.arch }}
+          archs: ${{ matrix.arch }}
+          containerfiles: ./sandbox/base/Containerfile
 
-      - name: Export digest
-        run: |
-          mkdir -p "${{ runner.temp }}/digests"
-          digest="${{ steps.build.outputs.digest }}"
-          touch "${{ runner.temp }}/digests/${digest#sha256:}"
-
-      - uses: actions/upload-artifact@v4
+      - name: Push base (${{ matrix.arch }})
+        uses: redhat-actions/push-to-registry@v2
         with:
-          name: digests-base-${{ matrix.arch }}
-          path: ${{ runner.temp }}/digests/*
-          retention-days: 1
+          image: openshell-sandbox-base
+          tags: latest-${{ matrix.arch }}
+          registry: ${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}
 
-  base-merge:
+  base-manifest:
     needs: base
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: ${{ runner.temp }}/digests
-          pattern: digests-base-*
-          merge-multiple: true
-
-      - uses: docker/setup-buildx-action@v3
+      - name: Ensure podman
+        run: command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install -y podman; }
 
       - name: Log in to ghcr.io
-        uses: docker/login-action@v3
+        uses: redhat-actions/podman-login@v1
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ${{ env.IMAGE_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create base manifest list
-        working-directory: ${{ runner.temp }}/digests
+      - name: Assemble + push multi-arch manifest
         run: |
-          IMG="${{ env.REGISTRY }}/${{ env.OWNER }}/openshell-sandbox-base"
-          docker buildx imagetools create -t "${IMG}:latest" \
-            $(printf "${IMG}@sha256:%s " *)
-          docker buildx imagetools inspect "${IMG}:latest"
+          IMG="${IMAGE_REGISTRY}/${REGISTRY_NAMESPACE}/openshell-sandbox-base"
+          podman manifest create "${IMG}:latest"
+          podman manifest add "${IMG}:latest" "docker://${IMG}:latest-amd64"
+          podman manifest add "${IMG}:latest" "docker://${IMG}:latest-arm64"
+          podman manifest push --all "${IMG}:latest" "docker://${IMG}:latest"
+          podman manifest inspect "${IMG}:latest"
 
-  # ---- Thin layers: build each (image × arch) by-digest, then merge per image ----
+  # ---- Thin layers: build each (image × arch) with buildah, then merge per image ----
   layers:
-    needs: base-merge
+    needs: base-manifest
     strategy:
       fail-fast: false
       matrix:
@@ -119,40 +111,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-buildx-action@v3
+      - name: Ensure buildah/podman
+        run: |
+          command -v buildah >/dev/null && command -v podman >/dev/null || \
+            { sudo apt-get update && sudo apt-get install -y buildah podman; }
 
       - name: Log in to ghcr.io
-        uses: docker/login-action@v3
+        uses: redhat-actions/podman-login@v1
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ${{ env.IMAGE_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push layer by digest
-        id: build
-        uses: docker/build-push-action@v6
+      - name: Build layer ${{ matrix.image.name }} (${{ matrix.arch }})
+        uses: redhat-actions/buildah-build@v2
         with:
-          context: .
-          file: sandbox/${{ matrix.image.dir }}/Containerfile
-          platforms: linux/${{ matrix.arch }}
-          provenance: false
+          image: ${{ matrix.image.name }}
+          tags: latest-${{ matrix.arch }}
+          archs: ${{ matrix.arch }}
+          containerfiles: ./sandbox/${{ matrix.image.dir }}/Containerfile
           build-args: |
-            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.OWNER }}/openshell-sandbox-base:latest
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.image.name }},push-by-digest=true,name-canonical=true,push=true
+            BASE_IMAGE=${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/openshell-sandbox-base:latest
 
-      - name: Export digest
-        run: |
-          mkdir -p "${{ runner.temp }}/digests"
-          digest="${{ steps.build.outputs.digest }}"
-          touch "${{ runner.temp }}/digests/${digest#sha256:}"
-
-      - uses: actions/upload-artifact@v4
+      - name: Push layer ${{ matrix.image.name }} (${{ matrix.arch }})
+        uses: redhat-actions/push-to-registry@v2
         with:
-          name: digests-${{ matrix.image.name }}-${{ matrix.arch }}
-          path: ${{ runner.temp }}/digests/*
-          retention-days: 1
+          image: ${{ matrix.image.name }}
+          tags: latest-${{ matrix.arch }}
+          registry: ${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}
 
-  layers-merge:
+  layers-manifest:
     needs: layers
     strategy:
       fail-fast: false
@@ -164,25 +152,21 @@ jobs:
           - openshell-sandbox-speckit-docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: ${{ runner.temp }}/digests
-          pattern: digests-${{ matrix.name }}-*
-          merge-multiple: true
-
-      - uses: docker/setup-buildx-action@v3
+      - name: Ensure podman
+        run: command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install -y podman; }
 
       - name: Log in to ghcr.io
-        uses: docker/login-action@v3
+        uses: redhat-actions/podman-login@v1
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ${{ env.IMAGE_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create manifest list for ${{ matrix.name }}
-        working-directory: ${{ runner.temp }}/digests
+      - name: Assemble + push manifest for ${{ matrix.name }}
         run: |
-          IMG="${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.name }}"
-          docker buildx imagetools create -t "${IMG}:latest" \
-            $(printf "${IMG}@sha256:%s " *)
-          docker buildx imagetools inspect "${IMG}:latest"
+          IMG="${IMAGE_REGISTRY}/${REGISTRY_NAMESPACE}/${{ matrix.name }}"
+          podman manifest create "${IMG}:latest"
+          podman manifest add "${IMG}:latest" "docker://${IMG}:latest-amd64"
+          podman manifest add "${IMG}:latest" "docker://${IMG}:latest-arm64"
+          podman manifest push --all "${IMG}:latest" "docker://${IMG}:latest"
+          podman manifest inspect "${IMG}:latest"
