@@ -19,7 +19,7 @@ jobs:
         containers: ['coredumps', 'build-utils', 'ssh-client']
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Log in to Quay.io
       uses: redhat-actions/podman-login@v1
