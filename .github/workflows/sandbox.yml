@@ -58,7 +58,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build base (${{ matrix.arch }})
-        uses: redhat-actions/buildah-build@v2
+        uses: redhat-actions/buildah-build@v3
         with:
           image: openshell-sandbox-base
           tags: latest-${{ matrix.arch }}
@@ -124,7 +124,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build layer ${{ matrix.image.name }} (${{ matrix.arch }})
-        uses: redhat-actions/buildah-build@v2
+        uses: redhat-actions/buildah-build@v3
         with:
           image: ${{ matrix.image.name }}
           tags: latest-${{ matrix.arch }}
