@@ -1,0 +1,172 @@
+name: Build and Push 'sandbox' containers (multi-arch → ghcr.io, podman/buildah)
+
+# Sandbox images for the sandboxctl/openshell toolchain.
+# Separate from the quay-based micro/standard workflows: these publish to
+# GitHub Container Registry (ghcr.io/butler54) using the built-in GITHUB_TOKEN.
+# Built multi-arch (linux/amd64 + linux/arm64) with buildah on native runners,
+# base first; per-arch images are combined into a manifest list with podman.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sandbox/**'
+      - '.github/workflows/sandbox.yml'
+  schedule:
+    # Weekly rebuild to pick up upstream package/tool updates. Off the :00 mark.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: sandbox-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_REGISTRY: ghcr.io
+  REGISTRY_NAMESPACE: butler54
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # ---- Base image: build each arch natively with buildah, push a per-arch tag ----
+  base:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure buildah/podman
+        run: |
+          command -v buildah >/dev/null && command -v podman >/dev/null || \
+            { sudo apt-get update && sudo apt-get install -y buildah podman; }
+
+      - name: Free disk space (base image is large)
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost || true
+          df -h /
+
+      - name: Log in to ghcr.io
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ${{ env.IMAGE_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build base (${{ matrix.arch }})
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: openshell-sandbox-base
+          tags: latest-${{ matrix.arch }}
+          archs: ${{ matrix.arch }}
+          containerfiles: ./sandbox/base/Containerfile
+
+      - name: Push base (${{ matrix.arch }})
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: openshell-sandbox-base
+          tags: latest-${{ matrix.arch }}
+          registry: ${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}
+
+  base-manifest:
+    needs: base
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure podman
+        run: command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install -y podman; }
+
+      - name: Log in to ghcr.io
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ${{ env.IMAGE_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assemble + push multi-arch manifest
+        run: |
+          IMG="${IMAGE_REGISTRY}/${REGISTRY_NAMESPACE}/openshell-sandbox-base"
+          podman manifest create "${IMG}:latest"
+          podman manifest add "${IMG}:latest" "docker://${IMG}:latest-amd64"
+          podman manifest add "${IMG}:latest" "docker://${IMG}:latest-arm64"
+          podman manifest push --all "${IMG}:latest" "docker://${IMG}:latest"
+          podman manifest inspect "${IMG}:latest"
+
+  # ---- Thin layers: build each (image × arch) with buildah, then merge per image ----
+  layers:
+    needs: base-manifest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - { dir: standard,     name: openshell-sandbox }
+          - { dir: docs,         name: openshell-sandbox-docs }
+          - { dir: speckit,      name: openshell-sandbox-speckit }
+          - { dir: speckit-docs, name: openshell-sandbox-speckit-docs }
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure buildah/podman
+        run: |
+          command -v buildah >/dev/null && command -v podman >/dev/null || \
+            { sudo apt-get update && sudo apt-get install -y buildah podman; }
+
+      - name: Log in to ghcr.io
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ${{ env.IMAGE_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build layer ${{ matrix.image.name }} (${{ matrix.arch }})
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: ${{ matrix.image.name }}
+          tags: latest-${{ matrix.arch }}
+          archs: ${{ matrix.arch }}
+          containerfiles: ./sandbox/${{ matrix.image.dir }}/Containerfile
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/openshell-sandbox-base:latest
+
+      - name: Push layer ${{ matrix.image.name }} (${{ matrix.arch }})
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ matrix.image.name }}
+          tags: latest-${{ matrix.arch }}
+          registry: ${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}
+
+  layers-manifest:
+    needs: layers
+    strategy:
+      fail-fast: false
+      matrix:
+        name:
+          - openshell-sandbox
+          - openshell-sandbox-docs
+          - openshell-sandbox-speckit
+          - openshell-sandbox-speckit-docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure podman
+        run: command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install -y podman; }
+
+      - name: Log in to ghcr.io
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ${{ env.IMAGE_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assemble + push manifest for ${{ matrix.name }}
+        run: |
+          IMG="${IMAGE_REGISTRY}/${REGISTRY_NAMESPACE}/${{ matrix.name }}"
+          podman manifest create "${IMG}:latest"
+          podman manifest add "${IMG}:latest" "docker://${IMG}:latest-amd64"
+          podman manifest add "${IMG}:latest" "docker://${IMG}:latest-arm64"
+          podman manifest push --all "${IMG}:latest" "docker://${IMG}:latest"
+          podman manifest inspect "${IMG}:latest"

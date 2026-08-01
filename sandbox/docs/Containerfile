@@ -1,0 +1,51 @@
+# OpenShell sandbox — docs profile (documents, presentations & diagrams)
+#
+# Thin config layer on top of the pre-built base image.
+# Adds draw.io libs dir and GWS config dir vs the standard profile.
+# Published as ghcr.io/butler54/openshell-sandbox-docs:latest (multi-arch).
+#
+# No user-specific config: git identity is injected at sandbox creation by
+# sandboxctl, NOT baked here (see GIT_USER_NAME/GIT_USER_EMAIL override ARGs).
+
+ARG BASE_IMAGE=ghcr.io/butler54/openshell-sandbox-base:latest
+FROM ${BASE_IMAGE}
+
+USER root
+
+# Vertex AI — project ID injected at sandbox creation via post_launch_setup()
+ENV CLAUDE_CODE_USE_VERTEX=1 \
+    CLOUD_ML_REGION=global \
+    PATH="/sandbox/.bun/bin:${PATH}"
+
+# Git config: SSH signing. Identity left unset (injected by sandboxctl); optional ARGs.
+ARG GIT_USER_NAME=""
+ARG GIT_USER_EMAIL=""
+RUN git config --system gpg.format ssh && \
+    git config --system commit.gpgsign true && \
+    git config --system user.signingkey /sandbox/.ssh/id_ed25519 && \
+    { [ -z "$GIT_USER_NAME" ]  || git config --system user.name  "$GIT_USER_NAME"; } && \
+    { [ -z "$GIT_USER_EMAIL" ] || git config --system user.email "$GIT_USER_EMAIL"; }
+
+# Claude Code keybindings + GSD runtime + claude-mem from base image
+RUN mkdir -p /sandbox/.claude/plugins/marketplaces /sandbox/.claude/plugins/cache && \
+    printf '{"bindings":[{"key":"shift+enter","command":"newline"}]}' > /sandbox/.claude/keybindings.json && \
+    ln -s /opt/gsd-core /sandbox/.claude/gsd-core && \
+    ln -s /opt/claude-mem/marketplace /sandbox/.claude/plugins/marketplaces/thedotmack && \
+    ln -s /opt/claude-mem/cache /sandbox/.claude/plugins/cache/thedotmack && \
+    ln -s /opt/bun /sandbox/.bun && \
+    CMEM_VER=$(cat /opt/claude-mem/cache/claude-mem/*/package.json 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['version'])" 2>/dev/null || echo "13.9.2") && \
+    printf '{"version":2,"plugins":{"claude-mem@thedotmack":[{"scope":"user","installPath":"/sandbox/.claude/plugins/cache/thedotmack/claude-mem/%s","version":"%s"}]}}' "$CMEM_VER" "$CMEM_VER" > /sandbox/.claude/plugins/installed_plugins.json && \
+    printf '{"thedotmack":{"source":{"source":"github","repo":"thedotmack/claude-mem"},"installLocation":"/sandbox/.claude/plugins/marketplaces/thedotmack","autoUpdate":false}}' > /sandbox/.claude/plugins/known_marketplaces.json
+
+# GSD global defaults — adaptive model mix (opus tier patched to Opus 4.8 1M in base).
+RUN mkdir -p /sandbox/.gsd && \
+    printf '{"model_profile":"adaptive"}\n' > /sandbox/.gsd/defaults.json
+
+# Directories (includes GWS and draw.io config dirs)
+RUN mkdir -p /sandbox/.ssh /sandbox/.config/gcloud /sandbox/.config/gws \
+        /sandbox/.drawio-libs && \
+    chown -R sandbox:sandbox /sandbox
+
+USER sandbox
+
+ENTRYPOINT ["/bin/bash"]

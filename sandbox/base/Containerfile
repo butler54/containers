@@ -1,0 +1,163 @@
+# OpenShell sandbox base image — pre-built tooling layer
+#
+# Contains all heavy downloads (CLIs, runtimes, models) so sandbox creation
+# is a thin config-layer pull, not a multi-GB build inside the podman VM.
+#
+# Built + pushed by .github/workflows/sandbox.yml to:
+#   ghcr.io/butler54/openshell-sandbox-base:latest   (multi-arch: linux/amd64, linux/arm64)
+#
+# No secrets or user-specific config in this image — it is public on ghcr.io.
+# Arch-specific downloads are parameterized by buildx $TARGETARCH so a single
+# Containerfile builds natively on both amd64 and arm64 runners.
+
+# Upstream base pinned to a multi-arch manifest-list digest (Dependabot-managed).
+ARG BASE_IMAGE=ghcr.io/nvidia/openshell-community/sandboxes/base@sha256:aeef1c63f00e2913ea002ccb3aaf925f338b5c5d70e63576f0d95c16a138044e
+FROM ${BASE_IMAGE}
+
+# Provided automatically by buildx (amd64 | arm64). Declared here so RUN steps see it.
+ARG TARGETARCH
+
+USER root
+
+# === System packages: fonts, headless rendering, OCR, build deps, utils ===
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        xvfb \
+        fonts-noto-cjk \
+        fonts-noto-color-emoji \
+        fonts-dejavu \
+        fonts-liberation \
+        wget \
+        gnupg \
+        jq \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        libtesseract-dev \
+        libleptonica-dev \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# === yq (YAML processor) ===
+RUN curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${TARGETARCH}" \
+      -o /usr/local/bin/yq && chmod 755 /usr/local/bin/yq
+
+# === Playwright Chromium (native binary, not snap stub) ===
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN npx playwright install --with-deps chromium 2>/dev/null || true
+RUN chmod -R o+rx /opt/playwright
+
+# Puppeteer config — point at playwright Chromium, skip runtime downloads
+RUN CHROME=$(find /opt/playwright -name chrome -type f 2>/dev/null | head -1) && \
+    printf '{"executablePath":"%s","args":["--no-sandbox","--disable-gpu"]}\n' "$CHROME" \
+      > /usr/local/lib/puppeteer-config.json && \
+    printf 'export PUPPETEER_EXECUTABLE_PATH=%s\nexport PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true\nexport PUPPETEER_CONFIG=/usr/local/lib/puppeteer-config.json\n' "$CHROME" \
+      > /etc/profile.d/puppeteer.sh && \
+    chmod +x /etc/profile.d/puppeteer.sh
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_CONFIG=/usr/local/lib/puppeteer-config.json
+
+# mmdc wrapper — always injects puppeteer config (--no-sandbox + playwright Chromium)
+# Installed after mermaid-cli below; /usr/local/bin takes priority over /usr/bin
+# (placeholder — actual wrapper created after npm install)
+
+# === Google Cloud CLI (for Vertex AI ADC) ===
+RUN curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | \
+      gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
+      > /etc/apt/sources.list.d/google-cloud-sdk.list && \
+    apt-get update && apt-get install -y --no-install-recommends google-cloud-cli && \
+    rm -rf /var/lib/apt/lists/*
+
+# === Go toolchain ===
+RUN curl -fsSL "https://go.dev/dl/go1.24.4.linux-${TARGETARCH}.tar.gz" | tar -C /usr/local -xz
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+# === OpenShift CLI (oc + kubectl) — latest stable ===
+# The multi-arch clients dir names amd64 as the un-suffixed archive; arm64 is suffixed.
+RUN case "${TARGETARCH}" in \
+      arm64) OC_FILE=openshift-client-linux-arm64.tar.gz ;; \
+      amd64) OC_FILE=openshift-client-linux.tar.gz ;; \
+      *)     echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/${OC_FILE}" \
+      | tar -xz -C /usr/local/bin oc kubectl && \
+    chmod 755 /usr/local/bin/oc /usr/local/bin/kubectl
+
+# === Helm (installer script is arch-aware) ===
+RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# === GitLab CLI (glab) — latest ===
+RUN GLAB_VERSION=$(curl -sf "https://gitlab.com/api/v4/projects/34675721/releases" | \
+      python3 -c "import sys,json; print(json.load(sys.stdin)[0]['tag_name'].lstrip('v'))") && \
+    curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_${TARGETARCH}.tar.gz" \
+      | tar -xz --strip-components=1 -C /usr/local/bin bin/glab && \
+    chmod 755 /usr/local/bin/glab
+
+# === Bun runtime (required by claude-mem plugin) ===
+RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/* && \
+    curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:${PATH}"
+
+# === Node global tools ===
+RUN npm install -g @googleworkspace/cli
+# mermaid-cli's puppeteer tries to download Chrome — skip it, we use playwright's
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+RUN npm install -g @mermaid-js/mermaid-cli
+
+# === SpecKit CLI (spec-driven development) ===
+RUN pip install --break-system-packages specify-cli
+
+# === codebase-memory-mcp (knowledge graph, single static binary, zero deps) ===
+# arm64-only upstream release asset; skip on other arches (non-fatal).
+RUN if [ "${TARGETARCH}" = "arm64" ]; then \
+      curl -fsSL "https://github.com/DeusData/codebase-memory-mcp/releases/latest/download/codebase-memory-mcp-linux-arm64.tar.gz" \
+        | tar -xz -C /usr/local/bin/ && \
+      chmod 755 /usr/local/bin/codebase-memory-mcp; \
+    else \
+      echo "codebase-memory-mcp: no ${TARGETARCH} release asset — skipping"; \
+    fi
+
+# claude-mem plugin — pre-install so no npm access needed at sandbox creation
+RUN mkdir -p /opt/claude-mem && \
+    npx claude-mem install 2>/dev/null; \
+    cp -r /root/.claude/plugins/marketplaces/thedotmack /opt/claude-mem/marketplace && \
+    cp -r /root/.claude/plugins/cache/thedotmack /opt/claude-mem/cache && \
+    rm -rf /root/.claude
+
+# === GSD runtime — baked to /opt/gsd-core, refreshed to latest on every rebuild ===
+# The thin standard/docs layers symlink /opt/gsd-core into /sandbox/.claude.
+# Patch the model catalog so the opus (high-end) tier resolves to Opus 4.8 1M.
+RUN npx -y @opengsd/gsd-core@latest --claude --global 2>/dev/null; \
+    rm -rf /opt/gsd-core && cp -r /root/.claude/gsd-core /opt/gsd-core && \
+    python3 -c "import json,pathlib; p=pathlib.Path('/opt/gsd-core/bin/shared/model-catalog.json'); d=json.loads(p.read_text()); d['runtimeTierDefaults']['claude']['opus']['model']='claude-opus-4-8[1m]'; p.write_text(json.dumps(d, indent=2))" && \
+    chmod -R o+rx /opt/gsd-core && \
+    rm -rf /root/.claude
+
+# Move bun to shared location accessible by sandbox user
+RUN cp -r /root/.bun /opt/bun && chmod -R o+rx /opt/bun
+
+# mmdc wrapper — must come after mermaid-cli install
+RUN printf '#!/bin/sh\nexec /usr/bin/mmdc -p /usr/local/lib/puppeteer-config.json "$@"\n' \
+      > /usr/local/bin/mmdc && chmod +x /usr/local/bin/mmdc
+
+# === draw.io Desktop (headless export via xvfb) ===
+RUN export PATH="/usr/local/sbin:/usr/sbin:/sbin:$PATH" && \
+    DRAWIO_VERSION=$(curl -sf https://api.github.com/repos/jgraph/drawio-desktop/releases/latest \
+      | grep '"tag_name"' | sed 's/.*"v\(.*\)".*/\1/') && \
+    curl -fsSL "https://github.com/jgraph/drawio-desktop/releases/download/v${DRAWIO_VERSION}/drawio-${TARGETARCH}-${DRAWIO_VERSION}.deb" \
+      -o /tmp/drawio.deb && \
+    dpkg -i /tmp/drawio.deb; apt-get install -f -y && \
+    rm -f /tmp/drawio.deb || true
+
+# === Docling (document conversion: PDF, DOCX, HTML → markdown) ===
+# CPU-only PyTorch + Tesseract OCR binding (pip resolves per-arch wheels)
+RUN pip install --break-system-packages \
+      docling[tesserocr] \
+      --extra-index-url https://download.pytorch.org/whl/cpu
+ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata/
+
+# Pre-download all docling models — no HuggingFace access needed at runtime
+RUN python3 -m docling.utils.model_downloader
+
+USER sandbox
+
+ENTRYPOINT ["/bin/bash"]

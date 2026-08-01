@@ -1,0 +1,54 @@
+# OpenShell sandbox — standard profile (tanky, coco, fw, analysis, etc.)
+#
+# Thin config layer on top of the pre-built base image.
+# No downloads — all tooling is in the base image on ghcr.io.
+# Published as ghcr.io/butler54/openshell-sandbox:latest (multi-arch).
+#
+# No user-specific config: git identity is injected at sandbox creation by
+# sandboxctl (from its [identity] config), NOT baked here. GIT_USER_NAME /
+# GIT_USER_EMAIL build ARGs exist only as an optional override for local builds.
+
+ARG BASE_IMAGE=ghcr.io/butler54/openshell-sandbox-base:latest
+FROM ${BASE_IMAGE}
+
+USER root
+
+# Vertex AI — project ID injected at sandbox creation via post_launch_setup()
+ENV CLAUDE_CODE_USE_VERTEX=1 \
+    CLOUD_ML_REGION=global \
+    GOPATH=/sandbox/go \
+    PATH="/sandbox/.bun/bin:${PATH}"
+
+# Git config: SSH signing. Identity is left unset in the public image and injected
+# by sandboxctl at creation. Optionally pass GIT_USER_NAME/GIT_USER_EMAIL to bake it.
+ARG GIT_USER_NAME=""
+ARG GIT_USER_EMAIL=""
+RUN git config --system gpg.format ssh && \
+    git config --system commit.gpgsign true && \
+    git config --system user.signingkey /sandbox/.ssh/id_ed25519 && \
+    { [ -z "$GIT_USER_NAME" ]  || git config --system user.name  "$GIT_USER_NAME"; } && \
+    { [ -z "$GIT_USER_EMAIL" ] || git config --system user.email "$GIT_USER_EMAIL"; }
+
+# Claude Code keybindings + GSD runtime + claude-mem from base image
+RUN mkdir -p /sandbox/.claude/plugins/marketplaces /sandbox/.claude/plugins/cache && \
+    printf '{"bindings":[{"key":"shift+enter","command":"newline"}]}' > /sandbox/.claude/keybindings.json && \
+    ln -s /opt/gsd-core /sandbox/.claude/gsd-core && \
+    ln -s /opt/claude-mem/marketplace /sandbox/.claude/plugins/marketplaces/thedotmack && \
+    ln -s /opt/claude-mem/cache /sandbox/.claude/plugins/cache/thedotmack && \
+    ln -s /opt/bun /sandbox/.bun && \
+    CMEM_VER=$(cat /opt/claude-mem/cache/claude-mem/*/package.json 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['version'])" 2>/dev/null || echo "13.9.2") && \
+    printf '{"version":2,"plugins":{"claude-mem@thedotmack":[{"scope":"user","installPath":"/sandbox/.claude/plugins/cache/thedotmack/claude-mem/%s","version":"%s"}]}}' "$CMEM_VER" "$CMEM_VER" > /sandbox/.claude/plugins/installed_plugins.json && \
+    printf '{"thedotmack":{"source":{"source":"github","repo":"thedotmack/claude-mem"},"installLocation":"/sandbox/.claude/plugins/marketplaces/thedotmack","autoUpdate":false}}' > /sandbox/.claude/plugins/known_marketplaces.json
+
+# GSD global defaults — adaptive model mix (opus/sonnet/haiku by role).
+# The opus (high-end) tier is patched to Opus 4.8 1M in the base image catalog.
+RUN mkdir -p /sandbox/.gsd && \
+    printf '{"model_profile":"adaptive"}\n' > /sandbox/.gsd/defaults.json
+
+# Ensure sandbox user owns everything
+RUN mkdir -p /sandbox/go /sandbox/.ssh /sandbox/.config/gcloud && \
+    chown -R sandbox:sandbox /sandbox
+
+USER sandbox
+
+ENTRYPOINT ["/bin/bash"]
