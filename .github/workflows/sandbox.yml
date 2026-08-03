@@ -38,7 +38,7 @@ jobs:
         arch: [amd64, arm64]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Ensure buildah/podman
         run: |
@@ -51,14 +51,14 @@ jobs:
           df -h /
 
       - name: Log in to ghcr.io
-        uses: redhat-actions/podman-login@v2
+        uses: redhat-actions/podman-login@50c2d9a331bb67c8fdab99b86455fad05e2e3252 # v2
         with:
           registry: ${{ env.IMAGE_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build base (${{ matrix.arch }})
-        uses: redhat-actions/buildah-build@v3
+        uses: redhat-actions/buildah-build@3a51aade9afa17e5c78256bcbe2e1ee08c7b995b # v3
         with:
           image: openshell-sandbox-base
           tags: latest-${{ matrix.arch }}
@@ -66,7 +66,7 @@ jobs:
           containerfiles: ./sandbox/base/Containerfile
 
       - name: Push base (${{ matrix.arch }})
-        uses: redhat-actions/push-to-registry@v3
+        uses: redhat-actions/push-to-registry@94ade333c38ecc0e60e94785125d9a52ca423b37 # v3
         with:
           image: openshell-sandbox-base
           tags: latest-${{ matrix.arch }}
@@ -80,7 +80,7 @@ jobs:
         run: command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install -y podman; }
 
       - name: Log in to ghcr.io
-        uses: redhat-actions/podman-login@v2
+        uses: redhat-actions/podman-login@50c2d9a331bb67c8fdab99b86455fad05e2e3252 # v2
         with:
           registry: ${{ env.IMAGE_REGISTRY }}
           username: ${{ github.actor }}
@@ -109,7 +109,7 @@ jobs:
         arch: [amd64, arm64]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Ensure buildah/podman
         run: |
@@ -117,14 +117,14 @@ jobs:
             { sudo apt-get update && sudo apt-get install -y buildah podman; }
 
       - name: Log in to ghcr.io
-        uses: redhat-actions/podman-login@v2
+        uses: redhat-actions/podman-login@50c2d9a331bb67c8fdab99b86455fad05e2e3252 # v2
         with:
           registry: ${{ env.IMAGE_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build layer ${{ matrix.image.name }} (${{ matrix.arch }})
-        uses: redhat-actions/buildah-build@v3
+        uses: redhat-actions/buildah-build@3a51aade9afa17e5c78256bcbe2e1ee08c7b995b # v3
         with:
           image: ${{ matrix.image.name }}
           tags: latest-${{ matrix.arch }}
@@ -134,7 +134,7 @@ jobs:
             BASE_IMAGE=${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/openshell-sandbox-base:latest
 
       - name: Push layer ${{ matrix.image.name }} (${{ matrix.arch }})
-        uses: redhat-actions/push-to-registry@v3
+        uses: redhat-actions/push-to-registry@94ade333c38ecc0e60e94785125d9a52ca423b37 # v3
         with:
           image: ${{ matrix.image.name }}
           tags: latest-${{ matrix.arch }}
@@ -156,7 +156,7 @@ jobs:
         run: command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install -y podman; }
 
       - name: Log in to ghcr.io
-        uses: redhat-actions/podman-login@v2
+        uses: redhat-actions/podman-login@50c2d9a331bb67c8fdab99b86455fad05e2e3252 # v2
         with:
           registry: ${{ env.IMAGE_REGISTRY }}
           username: ${{ github.actor }}
