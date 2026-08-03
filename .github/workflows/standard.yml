@@ -19,17 +19,17 @@ jobs:
         containers: ['coredumps', 'build-utils', 'ssh-client']
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v7
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
     - name: Log in to Quay.io
-      uses: redhat-actions/podman-login@v2
+      uses: redhat-actions/podman-login@50c2d9a331bb67c8fdab99b86455fad05e2e3252 # v2
       with:
         username: ${{ env.REGISTRY_USER }}
         password: ${{ secrets.REGISTRY_PASSWORD }}
         registry: ${{ env.IMAGE_REGISTRY }}
 
     - name: Log in to registry.redhat.io
-      uses: redhat-actions/podman-login@v2
+      uses: redhat-actions/podman-login@50c2d9a331bb67c8fdab99b86455fad05e2e3252 # v2
       with:
         username: ${{ env.REGISTRY_USER }}
         password: ${{ secrets.REGISTRY_PASSWORD }}
@@ -37,7 +37,7 @@ jobs:
 
     - name: Build Image
       id: build-image
-      uses: redhat-actions/buildah-build@v3
+      uses: redhat-actions/buildah-build@3a51aade9afa17e5c78256bcbe2e1ee08c7b995b # v3
       with:
         image: ${{ matrix.containers }}
         tags: latest 
@@ -47,7 +47,7 @@ jobs:
 
     - name: Push To quay.io
       id: push-to-quay
-      uses: redhat-actions/push-to-registry@v3
+      uses: redhat-actions/push-to-registry@94ade333c38ecc0e60e94785125d9a52ca423b37 # v3
       with:
         image: ${{ matrix.containers }}
         tags: latest
