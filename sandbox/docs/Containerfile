@@ -37,9 +37,10 @@ RUN mkdir -p /sandbox/.claude/plugins/marketplaces /sandbox/.claude/plugins/cach
     printf '{"version":2,"plugins":{"claude-mem@thedotmack":[{"scope":"user","installPath":"/sandbox/.claude/plugins/cache/thedotmack/claude-mem/%s","version":"%s"}]}}' "$CMEM_VER" "$CMEM_VER" > /sandbox/.claude/plugins/installed_plugins.json && \
     printf '{"thedotmack":{"source":{"source":"github","repo":"thedotmack/claude-mem"},"installLocation":"/sandbox/.claude/plugins/marketplaces/thedotmack","autoUpdate":false}}' > /sandbox/.claude/plugins/known_marketplaces.json
 
-# GSD global defaults — adaptive model mix (opus tier patched to Opus 4.8 1M in base).
+# GSD global defaults — balanced profile (opus for planning, sonnet for
+# execution/research/verification; opus tier patched to Opus 4.8 1M in base).
 RUN mkdir -p /sandbox/.gsd && \
-    printf '{"model_profile":"adaptive"}\n' > /sandbox/.gsd/defaults.json
+    printf '{"model_profile":"balanced"}\n' > /sandbox/.gsd/defaults.json
 
 # Directories (includes GWS and draw.io config dirs)
 RUN mkdir -p /sandbox/.ssh /sandbox/.config/gcloud /sandbox/.config/gws \
