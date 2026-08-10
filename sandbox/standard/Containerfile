@@ -40,10 +40,11 @@ RUN mkdir -p /sandbox/.claude/plugins/marketplaces /sandbox/.claude/plugins/cach
     printf '{"version":2,"plugins":{"claude-mem@thedotmack":[{"scope":"user","installPath":"/sandbox/.claude/plugins/cache/thedotmack/claude-mem/%s","version":"%s"}]}}' "$CMEM_VER" "$CMEM_VER" > /sandbox/.claude/plugins/installed_plugins.json && \
     printf '{"thedotmack":{"source":{"source":"github","repo":"thedotmack/claude-mem"},"installLocation":"/sandbox/.claude/plugins/marketplaces/thedotmack","autoUpdate":false}}' > /sandbox/.claude/plugins/known_marketplaces.json
 
-# GSD global defaults — adaptive model mix (opus/sonnet/haiku by role).
-# The opus (high-end) tier is patched to Opus 4.8 1M in the base image catalog.
+# GSD global defaults — balanced profile (opus for planning, sonnet for
+# execution/research/verification). The opus (high-end) tier is patched to
+# Opus 4.8 1M in the base image catalog.
 RUN mkdir -p /sandbox/.gsd && \
-    printf '{"model_profile":"adaptive"}\n' > /sandbox/.gsd/defaults.json
+    printf '{"model_profile":"balanced"}\n' > /sandbox/.gsd/defaults.json
 
 # Ensure sandbox user owns everything
 RUN mkdir -p /sandbox/go /sandbox/.ssh /sandbox/.config/gcloud && \
