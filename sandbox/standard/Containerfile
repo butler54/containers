@@ -16,8 +16,7 @@ USER root
 # Vertex AI — project ID injected at sandbox creation via post_launch_setup()
 ENV CLAUDE_CODE_USE_VERTEX=1 \
     CLOUD_ML_REGION=global \
-    GOPATH=/sandbox/go \
-    PATH="/sandbox/.bun/bin:${PATH}"
+    GOPATH=/sandbox/go
 
 # Git config: SSH signing. Identity is left unset in the public image and injected
 # by sandboxctl at creation. Optionally pass GIT_USER_NAME/GIT_USER_EMAIL to bake it.
@@ -29,16 +28,9 @@ RUN git config --system gpg.format ssh && \
     { [ -z "$GIT_USER_NAME" ]  || git config --system user.name  "$GIT_USER_NAME"; } && \
     { [ -z "$GIT_USER_EMAIL" ] || git config --system user.email "$GIT_USER_EMAIL"; }
 
-# Claude Code keybindings + GSD runtime + claude-mem from base image
-RUN mkdir -p /sandbox/.claude/plugins/marketplaces /sandbox/.claude/plugins/cache && \
-    printf '{"bindings":[{"key":"shift+enter","command":"newline"}]}' > /sandbox/.claude/keybindings.json && \
-    ln -s /opt/gsd-core /sandbox/.claude/gsd-core && \
-    ln -s /opt/claude-mem/marketplace /sandbox/.claude/plugins/marketplaces/thedotmack && \
-    ln -s /opt/claude-mem/cache /sandbox/.claude/plugins/cache/thedotmack && \
-    ln -s /opt/bun /sandbox/.bun && \
-    CMEM_VER=$(cat /opt/claude-mem/cache/claude-mem/*/package.json 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['version'])" 2>/dev/null || echo "13.9.2") && \
-    printf '{"version":2,"plugins":{"claude-mem@thedotmack":[{"scope":"user","installPath":"/sandbox/.claude/plugins/cache/thedotmack/claude-mem/%s","version":"%s"}]}}' "$CMEM_VER" "$CMEM_VER" > /sandbox/.claude/plugins/installed_plugins.json && \
-    printf '{"thedotmack":{"source":{"source":"github","repo":"thedotmack/claude-mem"},"installLocation":"/sandbox/.claude/plugins/marketplaces/thedotmack","autoUpdate":false}}' > /sandbox/.claude/plugins/known_marketplaces.json
+# Claude Code keybindings + GSD runtime
+RUN printf '{"bindings":[{"key":"shift+enter","command":"newline"}]}' > /sandbox/.claude/keybindings.json && \
+    ln -s /opt/gsd-core /sandbox/.claude/gsd-core
 
 # GSD global defaults — balanced profile (opus for planning, sonnet for
 # execution/research/verification). The opus (high-end) tier is patched to

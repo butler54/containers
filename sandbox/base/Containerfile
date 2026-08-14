@@ -97,11 +97,6 @@ RUN GLAB_VERSION=$(curl -sf "https://gitlab.com/api/v4/projects/34675721/release
       | tar -xz --strip-components=1 -C /usr/local/bin bin/glab && \
     chmod 755 /usr/local/bin/glab
 
-# === Bun runtime (required by claude-mem plugin) ===
-RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/* && \
-    curl -fsSL https://bun.sh/install | bash
-ENV PATH="/root/.bun/bin:${PATH}"
-
 # === Claude Code CLI — installed explicitly, not left to whatever version the
 # upstream base image happens to bundle (upstream has gone 2+ months between
 # publishes; an old baked-in CLI misses newly released models) ===
@@ -126,13 +121,6 @@ RUN if [ "${TARGETARCH}" = "arm64" ]; then \
       echo "codebase-memory-mcp: no ${TARGETARCH} release asset — skipping"; \
     fi
 
-# claude-mem plugin — pre-install so no npm access needed at sandbox creation
-RUN mkdir -p /opt/claude-mem && \
-    npx claude-mem install 2>/dev/null; \
-    cp -r /root/.claude/plugins/marketplaces/thedotmack /opt/claude-mem/marketplace && \
-    cp -r /root/.claude/plugins/cache/thedotmack /opt/claude-mem/cache && \
-    rm -rf /root/.claude
-
 # === GSD runtime — baked to /opt/gsd-core, refreshed to latest on every rebuild ===
 # The thin standard/docs layers symlink /opt/gsd-core into /sandbox/.claude.
 # Patch the model catalog so the opus (high-end) tier resolves to Opus 4.8 1M.
@@ -141,9 +129,6 @@ RUN npx -y @opengsd/gsd-core@latest --claude --global 2>/dev/null; \
     python3 -c "import json,pathlib; p=pathlib.Path('/opt/gsd-core/bin/shared/model-catalog.json'); d=json.loads(p.read_text()); d['runtimeTierDefaults']['claude']['opus']['model']='claude-opus-4-8[1m]'; p.write_text(json.dumps(d, indent=2))" && \
     chmod -R o+rx /opt/gsd-core && \
     rm -rf /root/.claude
-
-# Move bun to shared location accessible by sandbox user
-RUN cp -r /root/.bun /opt/bun && chmod -R o+rx /opt/bun
 
 # mmdc wrapper — must come after mermaid-cli install
 RUN printf '#!/bin/sh\nexec /usr/bin/mmdc -p /usr/local/lib/puppeteer-config.json "$@"\n' \
