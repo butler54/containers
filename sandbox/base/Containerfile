@@ -102,6 +102,11 @@ RUN GLAB_VERSION=$(curl -sf "https://gitlab.com/api/v4/projects/34675721/release
 # publishes; an old baked-in CLI misses newly released models) ===
 RUN npm install -g @anthropic-ai/claude-code@latest
 
+# === opencode CLI — same rationale as Claude Code above: the upstream base's
+# bundled opencode-ai has been observed 5+ months / 16 minor versions behind
+# npm latest, so install explicitly rather than trusting the base image ===
+RUN npm install -g opencode-ai@latest
+
 # === Node global tools ===
 RUN npm install -g @googleworkspace/cli
 # mermaid-cli's puppeteer tries to download Chrome — skip it, we use playwright's
