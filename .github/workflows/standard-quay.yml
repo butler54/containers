@@ -1,4 +1,4 @@
-name: Build and Push 'standard' containers with podman
+name: Build and Push 'standard-quay' containers with podman
 
 on:
   push:
@@ -42,7 +42,7 @@ jobs:
         image: ${{ matrix.containers }}
         tags: latest 
         containerfiles: |
-         ./standard/${{ matrix.containers }}/Containerfile
+         ./standard-quay/${{ matrix.containers }}/Containerfile
 
 
     - name: Push To quay.io

@@ -8,11 +8,24 @@ All are un-versioned.
 Each category has a build workflow under `.github/workflows/`; each image lives in
 `<category>/<image>/Containerfile`.
 
-| Category   | Registry                    | Workflow        | Notes                          |
-|------------|-----------------------------|-----------------|--------------------------------|
-| `micro`    | `quay.io/rh-ee-chbutler`    | `micro.yml`     | Minimal single-purpose images  |
-| `standard` | `quay.io/rh-ee-chbutler`    | `standard.yml`  | UBI-based utility images        |
-| `sandbox`  | `ghcr.io/butler54`          | `sandbox.yml`   | openshell/sandboxctl images     |
+| Category         | Registry                    | Workflow             | Notes                                    |
+|------------------|------------------------------|----------------------|-------------------------------------------|
+| `micro-quay`     | `quay.io/rh-ee-chbutler`    | `micro-quay.yml`     | Minimal single-purpose images             |
+| `standard-quay`  | `quay.io/rh-ee-chbutler`    | `standard-quay.yml`  | UBI-based utility images                  |
+| `standard-ghcr`  | `ghcr.io/butler54`          | `standard-ghcr.yml`  | Red Hat Hardened Image (`hi/*`) based utility images |
+| `sandbox`        | `ghcr.io/butler54`          | `sandbox.yml`        | openshell/sandboxctl images                |
+
+## `standard-ghcr` — hardened multi-arch utility images
+
+UBI-style utility images built on [Red Hat Hardened Images](https://images.redhat.com/)
+(`registry.access.redhat.com/hi/*`), published to **GitHub Container Registry**
+(GitHub-hosted CI + registry, using the built-in `GITHUB_TOKEN` — no external registry
+secret needed). Multi-arch (`linux/amd64` + `linux/arm64`), built on native GitHub
+runners and merged into a manifest list with `podman`, same pattern as `sandbox/`.
+
+| Image dir           | Published tag                          | Notes                                                      |
+|----------------------|-----------------------------------------|-------------------------------------------------------------|
+| `standard-ghcr/qmp`  | `ghcr.io/butler54/qmp:latest`          | `qemu.qmp[tui]` (`qmp-tui`, `qmp-shell`, `qmp-shell-wrap`) on the RH Hardened `hi/python` image; no entrypoint, run e.g. `podman run --rm -it ghcr.io/butler54/qmp:latest qmp-tui <host> <port>` |
 
 ## `sandbox` — openshell/sandboxctl images
 
