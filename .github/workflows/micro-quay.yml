@@ -1,4 +1,4 @@
-name: Build and Push 'micro' containers with podman
+name: Build and Push 'micro-quay' containers with podman
 
 on:
   push:
@@ -35,7 +35,7 @@ jobs:
 
     - name: Build Image
       id: build-image
-      run: buildah unshare ./micro/minisleep/buildscript.sh
+      run: buildah unshare ./micro-quay/minisleep/buildscript.sh
 
     - name: Push To quay.io
       id: push-to-quay

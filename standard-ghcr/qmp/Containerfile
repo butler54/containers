@@ -1,0 +1,14 @@
+# Build stage
+FROM registry.access.redhat.com/hi/python:3.14-builder AS builder
+USER root
+RUN python3 -m venv /opt/venv
+# qmp-tui's console-script entry point is gated behind the "tui" extra
+# (urwid/urwid-readline/Pygments); installing bare qemu.qmp leaves qmp-tui
+# non-functional.
+RUN /opt/venv/bin/pip install --no-cache-dir "qemu.qmp[tui]"
+USER ${CONTAINER_DEFAULT_USER}
+
+# Runtime stage
+FROM registry.access.redhat.com/hi/python:3.14
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"

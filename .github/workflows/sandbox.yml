@@ -1,7 +1,7 @@
 name: Build and Push 'sandbox' containers (multi-arch → ghcr.io, podman/buildah)
 
 # Sandbox images for the sandboxctl/openshell toolchain.
-# Separate from the quay-based micro/standard workflows: these publish to
+# Separate from the quay-based micro-quay/standard-quay workflows: these publish to
 # GitHub Container Registry (ghcr.io/butler54) using the built-in GITHUB_TOKEN.
 # Built multi-arch (linux/amd64 + linux/arm64) with buildah on native runners,
 # base first; per-arch images are combined into a manifest list with podman.

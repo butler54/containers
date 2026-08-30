@@ -1,0 +1,96 @@
+name: Build and Push 'standard-ghcr' containers (multi-arch → ghcr.io, podman/buildah)
+
+# Hardened-image (registry.access.redhat.com/hi/*) based utility images.
+# Separate from the quay-based micro-quay/standard-quay workflows: these publish to
+# GitHub Container Registry (ghcr.io/butler54) using the built-in GITHUB_TOKEN.
+# Built multi-arch (linux/amd64 + linux/arm64) with buildah on native runners,
+# per-arch images combined into a manifest list with podman.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'standard-ghcr/**'
+      - '.github/workflows/standard-ghcr.yml'
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: standard-ghcr-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_REGISTRY: ghcr.io
+  REGISTRY_NAMESPACE: butler54
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # ---- Build each (image × arch) with buildah, push a per-arch tag ----
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['qmp']
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Ensure buildah/podman
+        run: |
+          command -v buildah >/dev/null && command -v podman >/dev/null || \
+            { sudo apt-get update && sudo apt-get install -y buildah podman; }
+
+      - name: Log in to ghcr.io
+        uses: redhat-actions/podman-login@50c2d9a331bb67c8fdab99b86455fad05e2e3252 # v2
+        with:
+          registry: ${{ env.IMAGE_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build ${{ matrix.image }} (${{ matrix.arch }})
+        uses: redhat-actions/buildah-build@3a51aade9afa17e5c78256bcbe2e1ee08c7b995b # v3
+        with:
+          image: ${{ matrix.image }}
+          tags: latest-${{ matrix.arch }}
+          archs: ${{ matrix.arch }}
+          containerfiles: ./standard-ghcr/${{ matrix.image }}/Containerfile
+
+      - name: Push ${{ matrix.image }} (${{ matrix.arch }})
+        uses: redhat-actions/push-to-registry@94ade333c38ecc0e60e94785125d9a52ca423b37 # v3
+        with:
+          image: ${{ matrix.image }}
+          tags: latest-${{ matrix.arch }}
+          registry: ${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}
+
+  # ---- Merge per-arch images into a multi-arch manifest list ----
+  manifest:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['qmp']
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure podman
+        run: command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install -y podman; }
+
+      - name: Log in to ghcr.io
+        uses: redhat-actions/podman-login@50c2d9a331bb67c8fdab99b86455fad05e2e3252 # v2
+        with:
+          registry: ${{ env.IMAGE_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assemble + push manifest for ${{ matrix.image }}
+        run: |
+          IMG="${IMAGE_REGISTRY}/${REGISTRY_NAMESPACE}/${{ matrix.image }}"
+          podman manifest create "${IMG}:latest"
+          podman manifest add "${IMG}:latest" "docker://${IMG}:latest-amd64"
+          podman manifest add "${IMG}:latest" "docker://${IMG}:latest-arm64"
+          podman manifest push --all "${IMG}:latest" "docker://${IMG}:latest"
+          podman manifest inspect "${IMG}:latest"
