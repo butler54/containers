@@ -1,0 +1,4 @@
+# Minimal ubi9-micro image. Adds a marker file; nothing removed.
+FROM registry.access.redhat.com/ubi9-micro@sha256:f332c99eb8f798a8486821c91937f10ad64ee83d7e739303be2df051040918f6
+
+RUN echo "hello" > /hello.txt

@@ -12,8 +12,11 @@ env:
   IMAGE_REGISTRY: quay.io
 
 jobs:
-  microbuild:
+  build-and-push:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        containers: ['minisleep', 'microsleep', 'hardenedsleep']
     steps:
     - name: Checkout repository
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -27,14 +30,17 @@ jobs:
 
     - name: Build Image
       id: build-image
-      run: buildah unshare ./micro-quay/minisleep/buildscript.sh
+      uses: redhat-actions/buildah-build@3a51aade9afa17e5c78256bcbe2e1ee08c7b995b # v3
+      with:
+        image: ${{ matrix.containers }}
+        tags: latest
+        containerfiles: |
+          ./micro-quay/${{ matrix.containers }}/Containerfile
 
     - name: Push To quay.io
       id: push-to-quay
       uses: redhat-actions/push-to-registry@94ade333c38ecc0e60e94785125d9a52ca423b37 # v3
       with:
-        image: microsleep
+        image: ${{ matrix.containers }}
         tags: latest
         registry: quay.io/${{ env.REGISTRY_USER }}
-
-

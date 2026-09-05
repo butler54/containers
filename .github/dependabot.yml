@@ -4,9 +4,6 @@ updates:
   # images pinned by digest (literal `FROM image@sha256:...`); the sandbox thin
   # layers (standard/docs/speckit/speckit-docs) build FROM our own freshly-built
   # base via ${BASE_IMAGE}, so they aren't scanned here.
-  # NOTE: micro-quay images are built from buildah scripts (buildscript.sh), not
-  # Containerfiles — Dependabot cannot scan them. Their bases are digest-pinned
-  # and must be bumped manually (or migrated to Containerfiles).
   - package-ecosystem: "docker"
     directories:
       - "/sandbox/base"
@@ -15,6 +12,9 @@ updates:
       - "/standard-quay/coredumps"
       - "/standard-quay/ssh-client"
       - "/standard-quay/storage-utils"
+      - "/micro-quay/minisleep"
+      - "/micro-quay/microsleep"
+      - "/micro-quay/hardenedsleep"
     schedule:
       interval: "weekly"
       day: "monday"
