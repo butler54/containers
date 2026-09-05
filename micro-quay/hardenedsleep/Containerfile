@@ -1,0 +1,7 @@
+# Minimal ubi9-micro image with shell + common utils removed (no package
+# manager is available in ubi9-micro, so binaries are removed directly).
+# All removals must happen in this single RUN: deleting /bin/sh would break any
+# subsequent RUN instruction.
+FROM registry.access.redhat.com/ubi9-micro@sha256:f332c99eb8f798a8486821c91937f10ad64ee83d7e739303be2df051040918f6
+
+RUN rm -f /usr/bin/bash /usr/bin/sh /usr/bin/less /usr/bin/more /usr/bin/cat
