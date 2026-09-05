@@ -10,14 +10,11 @@
 # Arch-specific downloads are parameterized by buildx $TARGETARCH so a single
 # Containerfile builds natively on both amd64 and arm64 runners.
 
-# Upstream base tracked by tag, not a pinned digest: Dependabot's docker updater
-# is documented/tested primarily against literal `FROM image@sha256:...` lines,
-# not a digest nested inside an ARG default referenced via `FROM ${BASE_IMAGE}` —
-# an untested gray area for us. Floating on :latest means every rebuild picks up
-# whatever upstream currently publishes with no update-detection step in between.
-# Tradeoff: no reproducibility/review-gate — a bad upstream publish flows straight
-# into our builds. Reconsider if upstream starts publishing more frequently.
-FROM ghcr.io/nvidia/openshell-community/sandboxes/base:latest
+# Upstream base pinned by manifest-list digest; Dependabot (docker ecosystem)
+# bumps the pin when upstream publishes. The thin layers (standard/docs/speckit)
+# build FROM our own freshly-published base in the same workflow, so they
+# reference it by tag (${BASE_IMAGE}) rather than a digest.
+FROM ghcr.io/nvidia/openshell-community/sandboxes/base@sha256:aeef1c63f00e2913ea002ccb3aaf925f338b5c5d70e63576f0d95c16a138044e
 
 # Provided automatically by buildx (amd64 | arm64). Declared here so RUN steps see it.
 ARG TARGETARCH
