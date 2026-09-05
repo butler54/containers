@@ -1,3 +1,3 @@
-FROM registry.redhat.io/ubi9/ubi
+FROM registry.access.redhat.com/ubi9/ubi@sha256:25a147defd01e19674714f55d17538c8dbe55d8c305fa157ecc3f9c8977b05b6
 
 RUN dnf install -y /usr/bin/gcore /usr/bin/ps /usr/bin/strings
