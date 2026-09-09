@@ -30,8 +30,14 @@ RUN git config --system gpg.format ssh && \
 # Claude Code keybindings (no GSD in speckit profile)
 RUN printf '{"bindings":[{"key":"shift+enter","command":"newline"}]}' > /sandbox/.claude/keybindings.json
 
-# SpecKit initialization marker (actual init happens per-project)
-RUN mkdir -p /sandbox/.specify
+# Bootstrap only OpenCode-compatible SpecKit commands. Project-specific SpecKit
+# state remains in each cloned repository after its own `specify init`.
+RUN tmpdir=$(mktemp -d) && \
+    cd "$tmpdir" && \
+    specify init --here --force --ignore-agent-tools --integration opencode && \
+    mkdir -p /sandbox/.config/opencode/commands && \
+    cp -a .opencode/commands/. /sandbox/.config/opencode/commands/ && \
+    rm -rf "$tmpdir"
 
 # Ensure sandbox user owns everything
 RUN mkdir -p /sandbox/go /sandbox/.ssh /sandbox/.config/gcloud && \
