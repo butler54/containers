@@ -147,14 +147,33 @@ RUN export PATH="/usr/local/sbin:/usr/sbin:/sbin:$PATH" && \
     rm -f /tmp/drawio.deb || true
 
 # === Docling (document conversion: PDF, DOCX, HTML → markdown) ===
-# CPU-only PyTorch + Tesseract OCR binding (pip resolves per-arch wheels)
-RUN pip install --break-system-packages \
+# CPU-only PyTorch + Tesseract OCR binding (pip resolves per-arch wheels).
+#
+# Installed into a dedicated, immutable venv at /opt/venv rather than into
+# /sandbox/.venv. OpenShell persists /sandbox into every sandbox's home
+# volume, so heavy deps baked into /sandbox/.venv (docling + CPU-only
+# PyTorch, ~1.6GB uncompressed) were being duplicated across every sandbox
+# created from this image (~9.7GB across a typical 6-sandbox fleet).
+# Installing into /opt/venv keeps that weight in one shared image layer.
+RUN uv venv --python 3.14.3 --seed /opt/venv && \
+    uv pip install --python /opt/venv/bin/python \
       docling[tesserocr] \
-      --extra-index-url https://download.pytorch.org/whl/cpu
+      --extra-index-url https://download.pytorch.org/whl/cpu && \
+    uv cache clean
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata/
 
-# Pre-download all docling models — no HuggingFace access needed at runtime
-RUN python3 -m docling.utils.model_downloader
+# Pre-download all docling models into the shared venv — no HuggingFace
+# access needed at runtime.
+RUN /opt/venv/bin/python -m docling.utils.model_downloader
+
+# Expose /opt/venv's packages to /sandbox/.venv (the per-sandbox writable
+# venv seeded by the upstream base image) via a .pth file, so `import
+# docling` keeps working from user sessions without copying the packages
+# into /sandbox.
+RUN SITE_PKGS="$(/sandbox/.venv/bin/python -c 'import site; print(site.getsitepackages()[0])')" && \
+    OPT_SITE_PKGS="$(/opt/venv/bin/python -c 'import site; print(site.getsitepackages()[0])')" && \
+    echo "$OPT_SITE_PKGS" > "$SITE_PKGS/opt-venv.pth" && \
+    chmod -R o+rX /opt/venv
 
 USER sandbox
 
