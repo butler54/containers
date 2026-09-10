@@ -157,6 +157,7 @@ RUN export PATH="/usr/local/sbin:/usr/sbin:/sbin:$PATH" && \
 # Installing into /opt/venv keeps that weight in one shared image layer.
 RUN uv venv --python 3.14.3 --seed /opt/venv && \
     uv pip install --python /opt/venv/bin/python \
+      --index-strategy unsafe-best-match \
       docling[tesserocr] \
       --extra-index-url https://download.pytorch.org/whl/cpu && \
     uv cache clean
