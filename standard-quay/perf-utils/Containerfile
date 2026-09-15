@@ -1,0 +1,28 @@
+FROM registry.access.redhat.com/ubi9/ubi@sha256:25a147defd01e19674714f55d17538c8dbe55d8c305fa157ecc3f9c8977b05b6
+
+# UBI lacks several required benchmarks. Install only signed EL9 packages and
+# keep the external repositories ephemeral to the build transaction.
+# hadolint ignore=DL3041,DL4006
+RUN curl --fail --location --silent --show-error --output /tmp/RPM-GPG-KEY-EPEL-9 https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9 && \
+    echo "fcf0eab4f05a1c0de6363ac4b707600a27a9d774e9b491059e59e6921b255a84  /tmp/RPM-GPG-KEY-EPEL-9" | sha256sum --check && \
+    rpm --import /tmp/RPM-GPG-KEY-EPEL-9 && \
+    curl --fail --location --silent --show-error --output /tmp/epel-release.rpm https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
+    echo "b434245bffd8b40ea486157e72363d08b36e38145c8f917c5c00adfca3f2101b  /tmp/epel-release.rpm" | sha256sum --check && \
+    dnf install -y --setopt=localpkg_gpgcheck=1 /tmp/epel-release.rpm && \
+    curl --fail --location --silent --show-error --output /tmp/RPM-GPG-KEY-CentOS-Official https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official && \
+    echo "146059788b214d7ba0dd70c1cf21111e594c6cfde201da8a9a88fe7101be8a78  /tmp/RPM-GPG-KEY-CentOS-Official" | sha256sum --check && \
+    rpm --import /tmp/RPM-GPG-KEY-CentOS-Official && \
+    dnf install -y \
+        --setopt=install_weak_deps=False \
+        --repofrompath=centos-stream-appstream,https://mirror.stream.centos.org/9-stream/AppStream/"$(uname -m)"/os \
+        --setopt=centos-stream-appstream.gpgcheck=1 \
+        --setopt=centos-stream-appstream.repo_gpgcheck=1 \
+        --setopt=centos-stream-appstream.gpgkey=file:///tmp/RPM-GPG-KEY-CentOS-Official \
+        fio \
+        postgresql-server \
+        postgresql-contrib \
+        stress-ng \
+        sysbench && \
+    rm -f /etc/yum.repos.d/epel*.repo /tmp/epel-release.rpm /tmp/RPM-GPG-KEY-EPEL-9 /tmp/RPM-GPG-KEY-CentOS-Official && \
+    dnf clean all && \
+    rm -rf /var/cache/dnf

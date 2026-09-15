@@ -15,6 +15,14 @@ Each category has a build workflow under `.github/workflows/`; each image lives 
 | `standard-ghcr`  | `ghcr.io/butler54`          | `standard-ghcr.yml`  | Red Hat Hardened Image (`hi/*`) based utility images |
 | `sandbox`        | `ghcr.io/butler54`          | `sandbox.yml`        | openshell/sandboxctl images                |
 
+## `standard-quay` - UBI utility images
+
+Full UBI 9 utility images built and published through GitHub Actions to Quay.
+
+| Image dir | Published tag | Notes |
+|-----------|---------------|-------|
+| `standard-quay/perf-utils` | `quay.io/rh-ee-chbutler/perf-utils:latest` | Performance diagnostics with `sysbench`, PostgreSQL server/client and `pgbench`, `fio`, and `stress-ng`. Start an interactive shell with `podman run --rm -it quay.io/rh-ee-chbutler/perf-utils:latest bash`. PostgreSQL is installed but never starts automatically; explicitly initialize and start it for local testing, or use `psql` and `pgbench` with an authorized external service. |
+
 ## `standard-ghcr` — hardened multi-arch utility images
 
 UBI-style utility images built on [Red Hat Hardened Images](https://images.redhat.com/)
