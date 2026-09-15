@@ -12,6 +12,7 @@ updates:
       - "/standard-quay/coredumps"
       - "/standard-quay/ssh-client"
       - "/standard-quay/storage-utils"
+      - "/standard-quay/perf-utils"
       - "/micro-quay/minisleep"
       - "/micro-quay/microsleep"
       - "/micro-quay/hardenedsleep"

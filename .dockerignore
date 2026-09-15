@@ -1,0 +1,17 @@
+.git/
+.github/
+.specify/
+.opencode/
+specs/
+node_modules/
+*.log*
+.env*
+coverage/
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
+Dockerfile*
+.dockerignore
