@@ -110,7 +110,10 @@ RUN npm install -g opencode-ai@${OPENCODE_VERSION}
 # or experiment ID. Configure MLFLOW_TRACKING_URI and MLFLOW_EXPERIMENT_ID at
 # runtime to enable tracing for a particular user or project.
 ARG MLFLOW_OPENCODE_VERSION=0.4.0
-RUN mkdir -p /sandbox/.config/opencode && \
+ARG MLFLOW_CLAUDE_CODE_VERSION=0.4.0
+RUN npm install -g @mlflow/claude-code@${MLFLOW_CLAUDE_CODE_VERSION} && \
+    command -v mlflow-claude-code && \
+    mkdir -p /sandbox/.config/opencode && \
     npm install --prefix /sandbox/.config/opencode --omit=dev \
         @mlflow/opencode@${MLFLOW_OPENCODE_VERSION} && \
     printf '{"$schema":"https://opencode.ai/config.json","plugin":["@mlflow/opencode@%s"]}\n' \
