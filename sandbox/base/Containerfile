@@ -117,7 +117,7 @@ RUN mkdir -p /sandbox/.config/opencode && \
         "${MLFLOW_OPENCODE_VERSION}" > /sandbox/.config/opencode/opencode.json && \
     HOME=/sandbox claude plugin marketplace add https://github.com/mlflow/mlflow.git \
         --sparse .claude-plugin --scope user && \
-    HOME=/sandbox claude plugin install mlflow-tracing@mlflow-plugins --scope user --yes && \
+    HOME=/sandbox claude plugin install mlflow-tracing@mlflow-plugins --scope user && \
     chown -R sandbox:sandbox /sandbox
 
 # === Node global tools ===
