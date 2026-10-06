@@ -105,6 +105,21 @@ RUN npm install -g @anthropic-ai/claude-code@latest
 ARG OPENCODE_VERSION=1.18.30
 RUN npm install -g opencode-ai@${OPENCODE_VERSION}
 
+# === MLflow tracing plugins for OpenCode and Claude Code ===
+# Both plugins are installed for the sandbox user without a tracking endpoint
+# or experiment ID. Configure MLFLOW_TRACKING_URI and MLFLOW_EXPERIMENT_ID at
+# runtime to enable tracing for a particular user or project.
+ARG MLFLOW_OPENCODE_VERSION=0.4.0
+RUN mkdir -p /sandbox/.config/opencode && \
+    npm install --prefix /sandbox/.config/opencode --omit=dev \
+        @mlflow/opencode@${MLFLOW_OPENCODE_VERSION} && \
+    printf '{"$schema":"https://opencode.ai/config.json","plugin":["@mlflow/opencode@%s"]}\n' \
+        "${MLFLOW_OPENCODE_VERSION}" > /sandbox/.config/opencode/opencode.json && \
+    HOME=/sandbox claude plugin marketplace add https://github.com/mlflow/mlflow.git \
+        --sparse .claude-plugin --scope user && \
+    HOME=/sandbox claude plugin install mlflow-tracing@mlflow-plugins --scope user --yes && \
+    chown -R sandbox:sandbox /sandbox
+
 # === Node global tools ===
 RUN npm install -g @googleworkspace/cli
 # mermaid-cli's puppeteer tries to download Chrome — skip it, we use playwright's

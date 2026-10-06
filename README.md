@@ -53,6 +53,8 @@ no external registry secret needed):
   (`ubuntu-latest` + `ubuntu-24.04-arm`), base first, then the thin layers `FROM` it.
 - **`base`** carries all heavy tooling (gcloud, Go, `oc`/`kubectl`, helm, `glab`, bun,
   Playwright Chromium, SpecKit, GSD, claude-mem, docling + CPU PyTorch, draw.io).
+  It includes the MLflow tracing plugins for OpenCode and Claude Code. Set
+  `MLFLOW_TRACKING_URI` and `MLFLOW_EXPERIMENT_ID` at runtime to enable tracing.
   Arch-specific downloads are parameterized by buildx `$TARGETARCH`.
 - **No user-specific config** is baked in. Git identity is injected at sandbox creation
   by `sandboxctl` (from its `[identity]` config); the `GIT_USER_NAME` / `GIT_USER_EMAIL`
