@@ -75,6 +75,8 @@ jobs:
   base-manifest:
     needs: base
     runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.manifest.outputs.digest }}
     steps:
       - name: Ensure podman
         run: command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install -y podman; }
@@ -87,13 +89,18 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Assemble + push multi-arch manifest
+        id: manifest
         run: |
           IMG="${IMAGE_REGISTRY}/${REGISTRY_NAMESPACE}/openshell-sandbox-base"
           podman manifest create "${IMG}:latest"
           podman manifest add "${IMG}:latest" "docker://${IMG}:latest-amd64"
           podman manifest add "${IMG}:latest" "docker://${IMG}:latest-arm64"
-          podman manifest push --all "${IMG}:latest" "docker://${IMG}:latest"
+          podman manifest push --all --digestfile /tmp/base-manifest.digest \
+            "${IMG}:latest" "docker://${IMG}:latest"
           podman manifest inspect "${IMG}:latest"
+          DIGEST="$(cat /tmp/base-manifest.digest)"
+          test -n "${DIGEST}"
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
 
   # ---- Thin layers: build each (image × arch) with buildah, then merge per image ----
   layers:
@@ -131,7 +138,7 @@ jobs:
           archs: ${{ matrix.arch }}
           containerfiles: ./sandbox/${{ matrix.image.dir }}/Containerfile
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/openshell-sandbox-base:latest
+            BASE_IMAGE=${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/openshell-sandbox-base@${{ needs.base-manifest.outputs.digest }}
 
       - name: Push layer ${{ matrix.image.name }} (${{ matrix.arch }})
         uses: redhat-actions/push-to-registry@94ade333c38ecc0e60e94785125d9a52ca423b37 # v3
