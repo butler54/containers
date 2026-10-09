@@ -1,0 +1,89 @@
+# Generic, public documentation toolchain. Never COPY a consuming workspace.
+# Fedora is the explicitly approved exception to the usual UBI/HI base policy:
+# its native graphics and TeX packages avoid importing unsigned third-party RPMs.
+FROM registry.fedoraproject.org/fedora:44@sha256:ba35579e107f26a4c2c000390fb3ff549f3858a9584a6b5a35f7fa51f54de309 AS python-builder
+USER root
+RUN dnf -y upgrade --refresh && \
+    dnf -y install gcc make curl tar xz openssl-devel bzip2-devel libffi-devel \
+        zlib-devel readline-devel sqlite-devel xz-devel && dnf clean all
+RUN curl --fail --show-error --silent --location --proto '=https' \
+        https://www.python.org/ftp/python/3.12.15/Python-3.12.15.tar.xz -o /tmp/python.tar.xz && \
+    echo 'c2c4321961fab0fb999d66e0cecf521c2ab3994c7992873ea99e306c1094fd5a  /tmp/python.tar.xz' | sha256sum -c - && \
+    mkdir /tmp/python-source && tar -xJf /tmp/python.tar.xz --strip-components=1 -C /tmp/python-source && \
+    cd /tmp/python-source && \
+    LDFLAGS='-Wl,-rpath=/opt/python/lib' ./configure --prefix=/opt/python --enable-shared --with-ensurepip=install && \
+    make -j2 && make install
+COPY standard-ghcr/architecture-docs/requirements.lock /tmp/requirements.lock
+RUN /opt/python/bin/python3.12 -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: --require-hashes -r /tmp/requirements.lock
+
+FROM docker.io/structurizr/structurizr:2026.09.19-playwright@sha256:c89b54231c42da90484e6bf4e398f36a40123cb4b12c9d5f09c27eef3dc9644c AS structurizr
+# Remove unneeded browser families only from this build stage's own assets.
+RUN rm -rf /ms-playwright/firefox-* /ms-playwright/webkit-*
+
+FROM registry.fedoraproject.org/fedora:44@sha256:ba35579e107f26a4c2c000390fb3ff549f3858a9584a6b5a35f7fa51f54de309
+ARG TARGETARCH
+ARG BUILD_REVISION=unknown
+LABEL org.opencontainers.image.source="https://github.com/butler54/containers" \
+      org.opencontainers.image.title="architecture-docs" \
+      org.opencontainers.image.description="Generic C4, diagram, governed Markdown and screen PDF tooling" \
+      org.opencontainers.image.revision="${BUILD_REVISION}"
+USER root
+RUN dnf -y upgrade --refresh && \
+    dnf -y install bash curl tar gzip xz git findutils which \
+        openssl-libs bzip2-libs libffi zlib readline sqlite-libs xz-libs \
+        librsvg2-tools poppler-utils fontconfig dejavu-sans-fonts dejavu-sans-mono-fonts \
+        texlive-xetex texlive-collection-latexrecommended texlive-collection-fontsrecommended \
+        java-25-openjdk-headless nss nspr alsa-lib at-spi2-core cups-libs \
+        libX11 libXcomposite libXdamage libXext libXfixes libXrandr libxcb \
+        libxkbcommon libdrm mesa-libgbm pango cairo && dnf clean all
+COPY --from=python-builder /opt/python /opt/python
+COPY --from=python-builder /opt/venv /opt/venv
+COPY --from=structurizr /usr/local/structurizr.war /opt/structurizr/structurizr.war
+COPY --from=structurizr /usr/local/structurizr-themes /opt/structurizr/structurizr-themes
+COPY --from=structurizr /ms-playwright /ms-playwright
+COPY --from=structurizr /ms-playwright-driver /ms-playwright-driver
+ENV PATH="/opt/venv/bin:/opt/python/bin:/usr/local/bin:/usr/bin:/bin" \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    PLAYWRIGHT_DRIVER_DIR=/ms-playwright-driver \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HOME=/tmp
+RUN case "${TARGETARCH}" in \
+        amd64) NODE_ARCH=x64; NODE_SHA=fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6; \
+               D2_SHA=5669ddc46b99e942cc96078f4a4e36d5e62103348f4c05179ede27802fdd87a9; \
+               PANDOC_SHA=d0c90410e90204c9ca83b8539fac5c7aed01fd537207e4585849f8abc5df20b8 ;; \
+        arm64) NODE_ARCH=arm64; NODE_SHA=6ad1325edbdb5649c379b75a237147a666c95d4f9ae8d340fef2d1575d289ad2; \
+               D2_SHA=ac2c028697199479acb321db1e3d68caee9f2ba492ed73caa3cd13f3829bf913; \
+               PANDOC_SHA=445d96fd08801fe636cab1158b4f017ee320ac3b7446328b4fe2f902117b19b9 ;; \
+        *) echo 'Unsupported architecture' >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL --proto '=https' "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-${NODE_ARCH}.tar.xz" -o /tmp/node.tar.xz && \
+    echo "${NODE_SHA}  /tmp/node.tar.xz" | sha256sum -c - && \
+    tar -xJf /tmp/node.tar.xz --strip-components=1 -C /usr/local && \
+    curl -fsSL --proto '=https' "https://github.com/d2lang/d2/releases/download/v0.9.0/d2-v0.9.0-linux-${TARGETARCH}.tar.gz" -o /tmp/d2.tar.gz && \
+    echo "${D2_SHA}  /tmp/d2.tar.gz" | sha256sum -c - && \
+    mkdir /tmp/d2 && tar -xzf /tmp/d2.tar.gz -C /tmp/d2 && \
+    D2_BIN="$(find /tmp/d2 -type f -path '*/bin/d2' -print -quit)" && test -n "${D2_BIN}" && \
+    install -m 0755 "${D2_BIN}" /usr/local/bin/d2 && \
+    curl -fsSL --proto '=https' "https://github.com/jgm/pandoc/releases/download/3.12.1/pandoc-3.12.1-linux-${TARGETARCH}.tar.gz" -o /tmp/pandoc.tar.gz && \
+    echo "${PANDOC_SHA}  /tmp/pandoc.tar.gz" | sha256sum -c - && \
+    tar -xzf /tmp/pandoc.tar.gz --strip-components=1 -C /usr/local && \
+    rm -rf /tmp/d2 /tmp/d2.tar.gz /tmp/node.tar.xz /tmp/pandoc.tar.gz
+COPY standard-ghcr/architecture-docs/structurizr.sh /usr/local/bin/structurizr
+COPY standard-ghcr/architecture-docs/smoke.py /usr/local/lib/architecture-docs/smoke.py
+RUN chmod 0755 /usr/local/bin/structurizr && \
+    mkdir -p /work /usr/share/architecture-docs && \
+    rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n' | sort > /usr/share/architecture-docs/rpm-manifest.txt && \
+    /opt/venv/bin/pip freeze > /usr/share/architecture-docs/python-manifest.txt && \
+    chown 65532:0 /work && chmod 0775 /work && \
+    chmod -R a+rX /opt/python /opt/venv /opt/structurizr /ms-playwright /ms-playwright-driver && \
+    python3.12 -c 'import sys; assert sys.version_info[:3] == (3,12,15)' && \
+    test "$(node --version)" = v24.21.0 && \
+    xelatex --version | grep -F 'TeX Live 2026' && \
+    command -v rsvg-convert && command -v pdftoppm && command -v trestle && command -v zensical
+USER 65532:0
+WORKDIR /work
+ENTRYPOINT []
+CMD ["/bin/bash"]

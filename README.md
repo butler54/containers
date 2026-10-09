@@ -1,7 +1,7 @@
 # containers
 
 Utility container builds for personal use.
-All are un-versioned.
+Images generally track `latest`; standard GHCR builds also publish commit-addressed tags for digest-pinned consumption.
 
 ## Categories
 
@@ -34,6 +34,13 @@ runners and merged into a manifest list with `podman`, same pattern as `sandbox/
 | Image dir           | Published tag                          | Notes                                                      |
 |----------------------|-----------------------------------------|-------------------------------------------------------------|
 | `standard-ghcr/qmp`  | `ghcr.io/butler54/qmp:latest`          | `qemu.qmp[tui]` (`qmp-tui`, `qmp-shell`, `qmp-shell-wrap`) on the RH Hardened `hi/python` image; no entrypoint, run e.g. `podman run --rm -it ghcr.io/butler54/qmp:latest qmp-tui <host> <port>` |
+| `standard-ghcr/architecture-docs` | `ghcr.io/butler54/architecture-docs:sha-<commit>` | Generic non-root Python 3.12.15/Node 24.21.0, Zensical, Trestle, D2, Structurizr with offline Chromium, Pandoc, XeLaTeX, librsvg and PDF inspection tools. Fedora is an explicitly approved base exception for the native graphics/TeX stack. GitHub Actions must pass offline exports before publication; consumers pin the manifest digest. No workspace, credentials or project-specific content is included. |
+
+The standard GHCR workflow can dispatch one selected image. All builds publish a
+commit-addressed multi-architecture tag; only `main` updates `latest`. Fedora/RPM
+updates are recorded in the image's package inventory, and explicit downloaded
+tool releases are checksum-verified. The documentation image's source and runtime
+dependencies remain generic; publication never copies a consuming repository.
 
 ## `sandbox` — openshell/sandboxctl images
 

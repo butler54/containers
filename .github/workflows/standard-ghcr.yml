@@ -15,6 +15,12 @@ on:
   schedule:
     - cron: '0 4 * * *'
   workflow_dispatch:
+    inputs:
+      image:
+        description: Image to build
+        type: choice
+        default: all
+        options: [all, qmp, architecture-docs]
 
 concurrency:
   group: standard-ghcr-${{ github.ref }}
@@ -34,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ['qmp']
+        image: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.image != 'all' && format('["{0}"]', inputs.image) || '["qmp","architecture-docs"]') }}
         arch: [amd64, arm64]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     steps:
@@ -56,15 +62,80 @@ jobs:
         uses: redhat-actions/buildah-build@719e3c40d8af9790c23eca13f7daa339f2867034 # v3
         with:
           image: ${{ matrix.image }}
-          tags: latest-${{ matrix.arch }}
+          tags: |
+            sha-${{ github.sha }}-${{ matrix.arch }}
+            ${{ github.ref == 'refs/heads/main' && format('latest-{0}', matrix.arch) || '' }}
           archs: ${{ matrix.arch }}
           containerfiles: ./standard-ghcr/${{ matrix.image }}/Containerfile
+          build-args: |
+            BUILD_REVISION=${{ github.sha }}
+
+      - name: Offline non-root documentation smoke test
+        if: matrix.image == 'architecture-docs'
+        run: |
+          podman run --rm --read-only --network=none --cap-drop=ALL \
+            --security-opt=no-new-privileges --shm-size=512m \
+            --tmpfs /tmp:rw,nosuid,size=2g \
+            "architecture-docs:sha-${GITHUB_SHA}-${{ matrix.arch }}" \
+            python3.12 /usr/local/lib/architecture-docs/smoke.py
+
+      - name: Record documentation package inventory
+        if: matrix.image == 'architecture-docs'
+        run: |
+          podman run --rm --network=none --cap-drop=ALL \
+            "architecture-docs:sha-${GITHUB_SHA}-${{ matrix.arch }}" \
+            cat /usr/share/architecture-docs/rpm-manifest.txt
+          podman run --rm --network=none --cap-drop=ALL \
+            "architecture-docs:sha-${GITHUB_SHA}-${{ matrix.arch }}" \
+            cat /usr/share/architecture-docs/python-manifest.txt
+
+      - name: Export documentation image for security scanning
+        if: matrix.image == 'architecture-docs'
+        run: |
+          podman save --format oci-archive --output "${RUNNER_TEMP}/architecture-docs.tar" \
+            "architecture-docs:sha-${GITHUB_SHA}-${{ matrix.arch }}"
+
+      - name: Full documentation vulnerability report
+        if: matrix.image == 'architecture-docs'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          input: ${{ runner.temp }}/architecture-docs.tar
+          scanners: vuln,secret
+          format: json
+          output: ${{ runner.temp }}/architecture-docs-security.json
+          exit-code: '0'
+          ignore-unfixed: false
+          timeout: 15m
+
+      - name: Block fixable high and critical documentation vulnerabilities
+        if: matrix.image == 'architecture-docs'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          input: ${{ runner.temp }}/architecture-docs.tar
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+          timeout: 15m
+
+      - name: Retain complete documentation security report
+        if: always() && matrix.image == 'architecture-docs'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: architecture-docs-security-${{ matrix.arch }}
+          path: ${{ runner.temp }}/architecture-docs-security.json
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Push ${{ matrix.image }} (${{ matrix.arch }})
         uses: redhat-actions/push-to-registry@94ade333c38ecc0e60e94785125d9a52ca423b37 # v3
         with:
           image: ${{ matrix.image }}
-          tags: latest-${{ matrix.arch }}
+          tags: |
+            sha-${{ github.sha }}-${{ matrix.arch }}
+            ${{ github.ref == 'refs/heads/main' && format('latest-{0}', matrix.arch) || '' }}
           registry: ${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}
 
   # ---- Merge per-arch images into a multi-arch manifest list ----
@@ -73,7 +144,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ['qmp']
+        image: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.image != 'all' && format('["{0}"]', inputs.image) || '["qmp","architecture-docs"]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Ensure podman
@@ -89,8 +160,15 @@ jobs:
       - name: Assemble + push manifest for ${{ matrix.image }}
         run: |
           IMG="${IMAGE_REGISTRY}/${REGISTRY_NAMESPACE}/${{ matrix.image }}"
-          podman manifest create "${IMG}:latest"
-          podman manifest add "${IMG}:latest" "docker://${IMG}:latest-amd64"
-          podman manifest add "${IMG}:latest" "docker://${IMG}:latest-arm64"
-          podman manifest push --all "${IMG}:latest" "docker://${IMG}:latest"
-          podman manifest inspect "${IMG}:latest"
+          TAG="sha-${GITHUB_SHA}"
+          podman manifest create "${IMG}:${TAG}"
+          podman manifest add "${IMG}:${TAG}" "docker://${IMG}:${TAG}-amd64"
+          podman manifest add "${IMG}:${TAG}" "docker://${IMG}:${TAG}-arm64"
+          podman manifest push --all --digestfile "${RUNNER_TEMP}/manifest.digest" \
+            "${IMG}:${TAG}" "docker://${IMG}:${TAG}"
+          podman manifest inspect "${IMG}:${TAG}"
+          echo "### ${IMG}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Digest: $(cat "${RUNNER_TEMP}/manifest.digest")" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$GITHUB_REF" = refs/heads/main ]; then
+            podman manifest push --all "${IMG}:${TAG}" "docker://${IMG}:latest"
+          fi

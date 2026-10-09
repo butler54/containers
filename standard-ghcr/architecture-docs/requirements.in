@@ -1,0 +1,4 @@
+zensical==0.0.68
+compliance-trestle==5.2.0
+PyYAML==6.0.3
+defusedxml==0.7.1

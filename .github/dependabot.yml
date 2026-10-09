@@ -8,6 +8,7 @@ updates:
     directories:
       - "/sandbox/base"
       - "/standard-ghcr/qmp"
+      - "/standard-ghcr/architecture-docs"
       - "/standard-quay/build-utils"
       - "/standard-quay/coredumps"
       - "/standard-quay/ssh-client"
