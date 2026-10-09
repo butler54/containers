@@ -10,7 +10,9 @@ import tempfile
 
 
 def run(*args: str, cwd: Path | None = None) -> str:
-    result = subprocess.run(args, cwd=cwd, check=True, capture_output=True, text=True, timeout=240)
+    result = subprocess.run(args, cwd=cwd, check=False, capture_output=True, text=True, timeout=240)
+    if result.returncode:
+        raise RuntimeError(f"Command {args!r} failed ({result.returncode}):\n{result.stdout}\n{result.stderr}")
     return result.stdout + result.stderr
 
 
@@ -57,7 +59,8 @@ def main() -> None:
         exports = list((root / "c4").glob("*.svg"))
         if not exports or not any("image" in p.read_text() for p in exports):
             raise RuntimeError("Structurizr SVG export lost the custom icon")
-        (root / "book.md").write_text("# Generic architecture\n\n![Diagram](view.svg)\n")
+        run("rsvg-convert", "--format=pdf", "--output=view.pdf", "view.svg", cwd=root)
+        (root / "book.md").write_text("# Generic architecture\n\n![Diagram](view.pdf)\n")
         run("pandoc", "book.md", "--standalone", "--pdf-engine=xelatex", "--output=book.pdf", cwd=root)
         if (root / "book.pdf").read_bytes()[:5] != b"%PDF-":
             raise RuntimeError("PDF build failed")
