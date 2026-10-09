@@ -34,7 +34,7 @@ RUN dnf -y upgrade --refresh && \
         openssl-libs bzip2-libs libffi zlib readline sqlite-libs xz-libs \
         librsvg2-tools poppler-utils fontconfig dejavu-sans-fonts dejavu-sans-mono-fonts \
         texlive-xetex texlive-collection-latexrecommended texlive-collection-fontsrecommended \
-        java-25-openjdk-headless nss nspr alsa-lib at-spi2-core cups-libs \
+        java-25-openjdk-headless nss nspr alsa-lib at-spi2-core at-spi2-atk cups-libs \
         libX11 libXcomposite libXdamage libXext libXfixes libXrandr libxcb \
         libxkbcommon libdrm mesa-libgbm pango cairo && dnf clean all
 COPY --from=python-builder /opt/python /opt/python
@@ -74,6 +74,11 @@ RUN case "${TARGETARCH}" in \
 COPY standard-ghcr/architecture-docs/structurizr.sh /usr/local/bin/structurizr
 COPY standard-ghcr/architecture-docs/smoke.py /usr/local/lib/architecture-docs/smoke.py
 RUN chmod 0755 /usr/local/bin/structurizr && \
+    find /ms-playwright -type f \( -name chrome -o -name chrome-headless-shell \) \
+        -exec ldd {} \; > /tmp/browser-libraries.txt && \
+    cat /tmp/browser-libraries.txt && \
+    ! grep -F 'not found' /tmp/browser-libraries.txt && \
+    rm /tmp/browser-libraries.txt && \
     mkdir -p /work /usr/share/architecture-docs && \
     rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n' | sort > /usr/share/architecture-docs/rpm-manifest.txt && \
     /opt/venv/bin/pip freeze > /usr/share/architecture-docs/python-manifest.txt && \
