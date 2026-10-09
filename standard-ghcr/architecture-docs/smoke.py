@@ -24,12 +24,19 @@ def main() -> None:
             raise RuntimeError(f"Wrong {package} version")
     versions = {name: run(*command).splitlines()[0] for name, command in {
         "python": ("python3.12", "--version"), "node": ("node", "--version"),
+        "npm": ("npm", "--version"),
         "d2": ("d2", "--version"), "pandoc": ("pandoc", "--version"),
         "xelatex": ("xelatex", "--version"), "rsvg": ("rsvg-convert", "--version"),
         "java": ("java", "-version"),
     }.items()}
     with tempfile.TemporaryDirectory(prefix="architecture-docs-") as directory:
         root = Path(directory)
+        npm_workspace = root / "npm"
+        npm_workspace.mkdir()
+        (npm_workspace / "package.json").write_text('{"name":"offline-smoke","version":"1.0.0","private":true}')
+        run("npm", "install", "--package-lock-only", "--ignore-scripts", "--offline", "--no-audit", "--no-fund", cwd=npm_workspace)
+        run("npm", "ci", "--ignore-scripts", "--offline", "--no-audit", "--no-fund", cwd=npm_workspace)
+        run("npm", "pack", "--ignore-scripts", "--offline", cwd=npm_workspace)
         icon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><path fill="#1473e6" d="M2 2h36v36H2z"/></svg>'
         (root / "icon.svg").write_text(icon)
         (root / "view.d2").write_text('service: Service {icon: ./icon.svg}\nuser: User\nuser -> service: Uses\n')

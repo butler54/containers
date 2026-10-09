@@ -1,3 +1,3 @@
 #!/bin/sh
 set -eu
-exec java -jar /opt/structurizr/structurizr.war "$@"
+exec java -cp '/opt/structurizr/structurizr-cli.jar:/opt/structurizr/lib/*' com.structurizr.command.DocsCli "$@"

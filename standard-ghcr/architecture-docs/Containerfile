@@ -21,6 +21,32 @@ FROM docker.io/structurizr/structurizr:2026.09.19-playwright@sha256:c89b54231c42
 # Remove unneeded browser families only from this build stage's own assets.
 RUN rm -rf /ms-playwright/firefox-* /ms-playwright/webkit-*
 
+FROM registry.fedoraproject.org/fedora:44@sha256:ba35579e107f26a4c2c000390fb3ff549f3858a9584a6b5a35f7fa51f54de309 AS structurizr-builder
+USER root
+RUN dnf -y upgrade --refresh && dnf -y install java-25-openjdk-devel maven curl tar gzip && dnf clean all
+RUN curl -fsSL --proto '=https' \
+        https://codeload.github.com/structurizr/structurizr/tar.gz/f828a297dc693e08115b7e5b51dba4a83d8148c2 \
+        -o /tmp/structurizr.tar.gz && \
+    echo '83cb0a04d1b976f564ff15002a75a58f77d27b1742d9a8a3b9f6b6e85b5d719d  /tmp/structurizr.tar.gz' | sha256sum -c - && \
+    mkdir /tmp/upstream && tar -xzf /tmp/structurizr.tar.gz --strip-components=1 -C /tmp/upstream
+COPY standard-ghcr/architecture-docs/structurizr-cli /tmp/cli
+RUN mkdir -p /tmp/cli/src/main/java/com/structurizr/command /tmp/cli/src/main/resources/static && \
+    for SOURCE in AbstractCommand ValidateCommand ExportCommand JsonWorkspaceExport \
+        JsonWorkspaceExporter JsonWorkspaceThemeExporter PlaywrightExporter \
+        PlaywrightExporterImpl StaticSiteExporter StructurizrException; do \
+        cp "/tmp/upstream/structurizr-application/src/main/java/com/structurizr/command/${SOURCE}.java" \
+            /tmp/cli/src/main/java/com/structurizr/command/; \
+    done && \
+    cp /tmp/cli/DocsCli.java /tmp/cli/src/main/java/com/structurizr/command/ && \
+    cp -a /tmp/upstream/structurizr-application/src/main/resources/static/static /tmp/cli/src/main/resources/static/ && \
+    cd /tmp/cli && mvn --batch-mode --strict-checksums package \
+        org.apache.maven.plugins:maven-dependency-plugin:3.9.0:copy-dependencies \
+        -DincludeScope=runtime -DoutputDirectory=/opt/structurizr/lib && \
+    cp target/structurizr-docs-cli-2026.09.19-1.jar /opt/structurizr/structurizr-cli.jar && \
+    cp /tmp/upstream/LICENSE /opt/structurizr/LICENSE && \
+    cp /tmp/cli/pom.xml /opt/structurizr/build-pom.xml && \
+    sha256sum /opt/structurizr/lib/*.jar > /opt/structurizr/dependency-checksums.txt
+
 FROM registry.fedoraproject.org/fedora:44@sha256:ba35579e107f26a4c2c000390fb3ff549f3858a9584a6b5a35f7fa51f54de309
 ARG TARGETARCH
 ARG BUILD_REVISION=unknown
@@ -39,7 +65,7 @@ RUN dnf -y upgrade --refresh && \
         libxkbcommon libdrm mesa-libgbm pango cairo && dnf clean all
 COPY --from=python-builder /opt/python /opt/python
 COPY --from=python-builder /opt/venv /opt/venv
-COPY --from=structurizr /usr/local/structurizr.war /opt/structurizr/structurizr.war
+COPY --from=structurizr-builder /opt/structurizr /opt/structurizr
 COPY --from=structurizr /usr/local/structurizr-themes /opt/structurizr/structurizr-themes
 COPY --from=structurizr /ms-playwright /ms-playwright
 COPY --from=structurizr /ms-playwright-driver /ms-playwright-driver
@@ -72,8 +98,10 @@ RUN case "${TARGETARCH}" in \
     tar -xzf /tmp/pandoc.tar.gz --strip-components=1 -C /usr/local && \
     rm -rf /tmp/d2 /tmp/d2.tar.gz /tmp/node.tar.xz /tmp/pandoc.tar.gz
 COPY standard-ghcr/architecture-docs/structurizr.sh /usr/local/bin/structurizr
+COPY standard-ghcr/architecture-docs/patch-npm.py /usr/local/lib/architecture-docs/patch-npm.py
 COPY standard-ghcr/architecture-docs/smoke.py /usr/local/lib/architecture-docs/smoke.py
 RUN chmod 0755 /usr/local/bin/structurizr && \
+    python3.12 /usr/local/lib/architecture-docs/patch-npm.py && npm --version && \
     find /ms-playwright -type f \( -name chrome -o -name chrome-headless-shell \) \
         -exec ldd {} \; > /tmp/browser-libraries.txt && \
     cat /tmp/browser-libraries.txt && \

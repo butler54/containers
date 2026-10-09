@@ -42,6 +42,17 @@ updates are recorded in the image's package inventory, and explicit downloaded
 tool releases are checksum-verified. The documentation image's source and runtime
 dependencies remain generic; publication never copies a consuming repository.
 
+The documentation image uses a maintained CLI-only Structurizr variant compiled
+from upstream commit `f828a297dc693e08115b7e5b51dba4a83d8148c2` (2026.09.19).
+Only `validate` and `export` are exposed; the unused Spring web server, cloud
+publishers, and optional scripting-language runtimes are not packaged. Its Maven
+dependency overrides are in `standard-ghcr/architecture-docs/structurizr-cli/pom.xml`;
+the image records dependency checksums. Chromium/Playwright assets remain pinned
+to the matching upstream image. npm 11.19.1 includes checksum-verified,
+same-major vendored fixes for brace-expansion 5.0.11 and undici 6.28.1, recorded in
+`standard-ghcr/architecture-docs/patch-npm.py`. These variants must pass the same
+offline smoke tests and vulnerability gate as the rest of the toolchain.
+
 ## `sandbox` — openshell/sandboxctl images
 
 Images consumed by the `sandboxctl` / `openshell` toolchain, published to **GitHub
