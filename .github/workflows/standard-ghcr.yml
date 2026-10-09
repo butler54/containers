@@ -92,7 +92,7 @@ jobs:
       - name: Export documentation image for security scanning
         if: matrix.image == 'architecture-docs'
         run: |
-          podman save --format oci-archive --output "${RUNNER_TEMP}/architecture-docs.tar" \
+          podman save --format docker-archive --output "${RUNNER_TEMP}/architecture-docs.tar" \
             "architecture-docs:sha-${GITHUB_SHA}-${{ matrix.arch }}"
 
       - name: Full documentation vulnerability report
