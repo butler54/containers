@@ -30,7 +30,8 @@ RUN curl -fsSL --proto '=https' \
     echo '83cb0a04d1b976f564ff15002a75a58f77d27b1742d9a8a3b9f6b6e85b5d719d  /tmp/structurizr.tar.gz' | sha256sum -c - && \
     mkdir /tmp/upstream && tar -xzf /tmp/structurizr.tar.gz --strip-components=1 -C /tmp/upstream
 COPY standard-ghcr/architecture-docs/structurizr-cli /tmp/cli
-RUN mkdir -p /tmp/cli/src/main/java/com/structurizr/command /tmp/cli/src/main/resources/static && \
+RUN mkdir -p /tmp/cli/src/main/java/com/structurizr/command \
+        /tmp/cli/src/main/java/com/structurizr/util /tmp/cli/src/main/resources/static && \
     for SOURCE in AbstractCommand ValidateCommand ExportCommand JsonWorkspaceExport \
         JsonWorkspaceExporter JsonWorkspaceThemeExporter PlaywrightExporter \
         PlaywrightExporterImpl StaticSiteExporter StructurizrException; do \
@@ -38,6 +39,9 @@ RUN mkdir -p /tmp/cli/src/main/java/com/structurizr/command /tmp/cli/src/main/re
             /tmp/cli/src/main/java/com/structurizr/command/; \
     done && \
     cp /tmp/cli/DocsCli.java /tmp/cli/src/main/java/com/structurizr/command/ && \
+    cp /tmp/upstream/structurizr-application/src/main/java/com/structurizr/util/Version.java \
+        /tmp/cli/src/main/java/com/structurizr/util/ && \
+    printf 'app.version=2026.09.19-cli-1\n' > /tmp/cli/src/main/resources/application.properties && \
     cp -a /tmp/upstream/structurizr-application/src/main/resources/static/static /tmp/cli/src/main/resources/static/ && \
     cd /tmp/cli && mvn --batch-mode --strict-checksums package \
         org.apache.maven.plugins:maven-dependency-plugin:3.9.0:copy-dependencies \
