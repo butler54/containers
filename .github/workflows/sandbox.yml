@@ -75,6 +75,9 @@ jobs:
           image: openshell-sandbox-base
           tags: latest-${{ matrix.arch }}
           archs: ${{ matrix.arch }}
+          # Build context is the image dir so the Containerfile can COPY
+          # sandbox/base/package.json (the pinned AI CLI version manifest).
+          context: ./sandbox/base
           containerfiles: ./sandbox/base/Containerfile
 
       - name: Audit baked-in AI CLI versions
