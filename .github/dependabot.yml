@@ -24,6 +24,20 @@ updates:
       - "dependencies"
       - "sandbox"
 
+  # AI CLI versions pinned in sandbox/base/package.json (opencode-ai,
+  # @anthropic-ai/claude-code). Source of version-bump PRs for the sandbox
+  # base image tooling; the Containerfile installs from that manifest.
+  - package-ecosystem: "npm"
+    directories:
+      - "/sandbox/base"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "sandbox"
+
   # GitHub Actions used by the workflows (docker/*, actions/*, redhat-actions/*).
   - package-ecosystem: "github-actions"
     directory: "/"

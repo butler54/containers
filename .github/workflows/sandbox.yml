@@ -12,6 +12,10 @@ on:
     paths:
       - 'sandbox/**'
       - '.github/workflows/sandbox.yml'
+  pull_request:
+    paths:
+      - 'sandbox/**'
+      - '.github/workflows/sandbox.yml'
   schedule:
     # Weekly rebuild to pick up upstream package/tool updates. Off the :00 mark.
     - cron: '17 6 * * 1'
@@ -25,13 +29,20 @@ env:
   IMAGE_REGISTRY: ghcr.io
   REGISTRY_NAMESPACE: butler54
 
+# Least privilege: read-only by default. Jobs that publish to ghcr.io declare
+# `permissions: packages: write` individually, and their login/push steps are
+# additionally gated on non-PR events — pull_request builds cannot publish.
 permissions:
   contents: read
-  packages: write
 
 jobs:
   # ---- Base image: build each arch natively with buildah, push a per-arch tag ----
   base:
+    # Always builds (incl. PRs — pre-merge validation, FR-006); publishes only
+    # when not triggered by a pull_request.
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +62,7 @@ jobs:
           df -h /
 
       - name: Log in to ghcr.io
+        if: github.event_name != 'pull_request'
         uses: redhat-actions/podman-login@50c2d9a331bb67c8fdab99b86455fad05e2e3252 # v2
         with:
           registry: ${{ env.IMAGE_REGISTRY }}
@@ -65,7 +77,16 @@ jobs:
           archs: ${{ matrix.arch }}
           containerfiles: ./sandbox/base/Containerfile
 
+      - name: Audit baked-in AI CLI versions
+        run: |
+          echo "--- /opt/ai-cli-versions/package.json ---"
+          podman run --rm localhost/openshell-sandbox-base:latest-${{ matrix.arch }} \
+            cat /opt/ai-cli-versions/package.json
+          podman run --rm localhost/openshell-sandbox-base:latest-${{ matrix.arch }} opencode --version
+          podman run --rm localhost/openshell-sandbox-base:latest-${{ matrix.arch }} claude --version
+
       - name: Push base (${{ matrix.arch }})
+        if: github.event_name != 'pull_request'
         uses: redhat-actions/push-to-registry@94ade333c38ecc0e60e94785125d9a52ca423b37 # v3
         with:
           image: openshell-sandbox-base
@@ -73,7 +94,11 @@ jobs:
           registry: ${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}
 
   base-manifest:
+    if: github.event_name != 'pull_request'
     needs: base
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-latest
     outputs:
       digest: ${{ steps.manifest.outputs.digest }}
@@ -104,7 +129,11 @@ jobs:
 
   # ---- Thin layers: build each (image × arch) with buildah, then merge per image ----
   layers:
+    if: github.event_name != 'pull_request'
     needs: base-manifest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -148,7 +177,11 @@ jobs:
           registry: ${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}
 
   layers-manifest:
+    if: github.event_name != 'pull_request'
     needs: layers
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
