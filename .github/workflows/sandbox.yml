@@ -82,11 +82,13 @@ jobs:
 
       - name: Audit baked-in AI CLI versions
         run: |
+          # The image ENTRYPOINT is /bin/bash (no -c), so override it to run
+          # audit commands directly rather than having bash treat them as scripts.
           echo "--- /opt/ai-cli-versions/package.json ---"
-          podman run --rm localhost/openshell-sandbox-base:latest-${{ matrix.arch }} \
-            cat /opt/ai-cli-versions/package.json
-          podman run --rm localhost/openshell-sandbox-base:latest-${{ matrix.arch }} opencode --version
-          podman run --rm localhost/openshell-sandbox-base:latest-${{ matrix.arch }} claude --version
+          podman run --rm --entrypoint cat localhost/openshell-sandbox-base:latest-${{ matrix.arch }} \
+            /opt/ai-cli-versions/package.json
+          podman run --rm --entrypoint opencode localhost/openshell-sandbox-base:latest-${{ matrix.arch }} --version
+          podman run --rm --entrypoint claude localhost/openshell-sandbox-base:latest-${{ matrix.arch }} --version
 
       - name: Push base (${{ matrix.arch }})
         if: github.event_name != 'pull_request'
