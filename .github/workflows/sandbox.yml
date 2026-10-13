@@ -89,7 +89,7 @@ jobs:
             /opt/ai-cli-versions/package.json
           podman run --rm --entrypoint opencode localhost/openshell-sandbox-base:latest-${{ matrix.arch }} --version
           podman run --rm --entrypoint claude localhost/openshell-sandbox-base:latest-${{ matrix.arch }} --version
-          podman run --rm --entrypoint xvfb-run localhost/openshell-sandbox-base:latest-${{ matrix.arch }} -a drawio --version
+          podman run --rm --entrypoint xvfb-run localhost/openshell-sandbox-base:latest-${{ matrix.arch }} -a drawio --no-sandbox --disable-gpu --version
 
       - name: Push base (${{ matrix.arch }})
         if: github.event_name != 'pull_request'

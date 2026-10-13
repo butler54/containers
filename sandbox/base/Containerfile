@@ -165,7 +165,7 @@ RUN export PATH="/usr/local/sbin:/usr/sbin:/sbin:$PATH" && \
     apt-get update && \
     apt-get install -y --no-install-recommends /tmp/drawio.deb && \
     dpkg-query -W draw.io && \
-    xvfb-run -a -s "-screen 0 1280x800x24" drawio --version && \
+    xvfb-run -a -s "-screen 0 1280x800x24" drawio --no-sandbox --disable-gpu --version && \
     rm -f /tmp/drawio.deb && rm -rf /var/lib/apt/lists/*
 
 # === Docling (document conversion: PDF, DOCX, HTML → markdown) ===
