@@ -92,9 +92,13 @@ RUN case "${TARGETARCH}" in \
 RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
 # === GitLab CLI (glab) — latest ===
-RUN GLAB_VERSION=$(curl -sf "https://gitlab.com/api/v4/projects/34675721/releases" | \
+# Retries with backoff: the GitLab releases API occasionally 503s, and an
+# empty response must fail loudly rather than JSONDecode on nothing.
+RUN GLAB_VERSION=$(curl -sfS --retry 6 --retry-delay 15 --retry-all-errors \
+      "https://gitlab.com/api/v4/projects/34675721/releases" | \
       python3 -c "import sys,json; print(json.load(sys.stdin)[0]['tag_name'].lstrip('v'))") && \
-    curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_${TARGETARCH}.tar.gz" \
+    curl -fsSL --retry 6 --retry-delay 15 --retry-all-errors \
+      "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_${TARGETARCH}.tar.gz" \
       | tar -xz --strip-components=1 -C /usr/local/bin bin/glab && \
     chmod 755 /usr/local/bin/glab
 
