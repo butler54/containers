@@ -117,11 +117,16 @@ RUN GLAB_VERSION=$(curl -sfS --retry 6 --retry-delay 15 --retry-all-errors \
 # @opencode/cli (OpenCode 2.x) resolves its native binary via per-platform
 # optionalDependencies (e.g. @opencode/cli-linux-arm64), so the bin works even
 # when npm skips/flags the package's postinstall script. V1's `opencode-ai`
-# package is gone; both series expose the same `opencode` command.
+# package is gone; both series expose the same `opencode` command. The upstream
+# base bundles a V1 opencode at /usr/bin/opencode (npm prefix is /usr) — remove
+# it first: npm refuses (EEXIST) to link a different package's bin over it.
 COPY package.json /opt/ai-cli-versions/package.json
-RUN jq -r '.dependencies | to_entries[] | "\(.key)@\(.value)"' \
+RUN npm uninstall -g opencode-ai 2>/dev/null || true; \
+    rm -f /usr/bin/opencode /usr/bin/opencode2 && \
+    jq -r '.dependencies | to_entries[] | "\(.key)@\(.value)"' \
       /opt/ai-cli-versions/package.json \
-      | xargs -r npm install -g --no-audit --no-fund
+      | xargs -r npm install -g --no-audit --no-fund && \
+    command -v opencode
 
 # === Node global tools ===
 RUN npm install -g @googleworkspace/cli
