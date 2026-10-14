@@ -19,6 +19,12 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    # All docker bumps across every directory land in ONE grouped PR per
+    # cycle instead of one PR per image.
+    groups:
+      docker-base-images:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
@@ -33,6 +39,11 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    # All npm bumps in /sandbox/base land in ONE grouped PR per cycle.
+    groups:
+      npm-ai-clis:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
@@ -44,6 +55,11 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    # All workflow action bumps land in ONE grouped PR per cycle.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
     labels:
       - "dependencies"
       - "github-actions"
