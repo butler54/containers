@@ -4,7 +4,7 @@
   "private": true,
   "description": "Exact-pinned AI CLI versions baked into the openshell sandbox base image. Single source of truth — Dependabot (npm ecosystem, /sandbox/base) proposes version bumps via PR; the Containerfile installs from this file.",
   "dependencies": {
-    "opencode-ai": "1.18.30",
+    "@opencode/cli": "2.0.28",
     "@anthropic-ai/claude-code": "2.1.296"
   }
 }

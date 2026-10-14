@@ -87,7 +87,15 @@ jobs:
           echo "--- /opt/ai-cli-versions/package.json ---"
           podman run --rm --entrypoint cat localhost/openshell-sandbox-base:latest-${{ matrix.arch }} \
             /opt/ai-cli-versions/package.json
-          podman run --rm --entrypoint opencode localhost/openshell-sandbox-base:latest-${{ matrix.arch }} --version
+          # Assert the OpenCode major version so a silent regression to the
+          # 1.x package (opencode-ai) fails the build. Output looks like
+          # "opencode v2.0.28".
+          OPENCODE_VERSION="$(podman run --rm --entrypoint opencode localhost/openshell-sandbox-base:latest-${{ matrix.arch }} --version)"
+          echo "opencode version: ${OPENCODE_VERSION}"
+          case "${OPENCODE_VERSION}" in
+            *v2.*) ;;
+            *) echo "::error::opencode is expected to be 2.x, got '${OPENCODE_VERSION}'" && exit 1 ;;
+          esac
           podman run --rm --entrypoint claude localhost/openshell-sandbox-base:latest-${{ matrix.arch }} --version
           # Run the Electron check as root with its own timeout: matches the
           # buildah RUN context (root) where the same verification passes, and

@@ -69,7 +69,7 @@ no external registry secret needed):
   by **Dependabot** (`docker` + `github-actions` ecosystems). Raw `curl`-downloaded tools
   in the base (Go, `oc`, helm, `yq`, `glab`, draw.io) track "latest" and are refreshed by
   the **weekly scheduled rebuild**, not Dependabot.
-- **Pinned AI CLI versions:** the AI CLIs baked into `sandbox/base` (`opencode-ai`,
+- **Pinned AI CLI versions:** the AI CLIs baked into `sandbox/base` (`@opencode/cli`,
   `@anthropic-ai/claude-code`) are exact-pinned in **`sandbox/base/package.json`** — the
   single source of truth. The Containerfile installs from that manifest (kept on the
   image at `/opt/ai-cli-versions/` for auditing; each build's versions are also printed
