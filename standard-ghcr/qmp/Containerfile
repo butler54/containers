@@ -1,5 +1,5 @@
 # Build stage
-FROM registry.access.redhat.com/hi/python:3.14-builder@sha256:4962b3ac56cf1c60bfb3e7978011d1eb3d70d96e6d14b07bc3ab71dd2753e7eb AS builder
+FROM registry.access.redhat.com/hi/python:3.14-builder@sha256:41de0aeac368800a458d330b822cc08a0877a9fc7c574ec7fdaf5b180941941f AS builder
 USER root
 RUN python3 -m venv /opt/venv
 # qmp-tui's console-script entry point is gated behind the "tui" extra
@@ -9,6 +9,6 @@ RUN /opt/venv/bin/pip install --no-cache-dir "qemu.qmp[tui]"
 USER ${CONTAINER_DEFAULT_USER}
 
 # Runtime stage
-FROM registry.access.redhat.com/hi/python:3.14@sha256:50d513aec81f77648e6ee971d0d5bf4724e276cf355946811e6be9dee598b513
+FROM registry.access.redhat.com/hi/python:3.14@sha256:1cd247723979d5c879a5c71398ee9b46eaf8b90009f57f7b654ad93a60165c59
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
