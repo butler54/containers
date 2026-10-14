@@ -60,6 +60,11 @@ no external registry secret needed):
   build ARGs are an optional local-build override only.
 - **GSD** defaults to the `adaptive` model profile; the opus (high-end) tier is patched
   to `claude-opus-4-8[1m]` (Opus 4.8, 1M context) in the base catalog.
+- **draw.io** is installed for headless diagram export via xvfb
+  (e.g. `xvfb-run -a drawio --export --format png in.drawio`). The install is
+  self-verifying at build time: apt resolves the .deb's dependencies from a fresh
+  package list and the step fails the build if the binary can't launch headlessly —
+  a broken draw.io can no longer ship silently.
 - **Pinning / updates:** the upstream base is pinned by manifest-list digest and bumped
   by **Dependabot** (`docker` + `github-actions` ecosystems). Raw `curl`-downloaded tools
   in the base (Go, `oc`, helm, `yq`, `glab`, draw.io) track "latest" and are refreshed by

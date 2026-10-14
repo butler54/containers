@@ -80,7 +80,7 @@ jobs:
           context: ./sandbox/base
           containerfiles: ./sandbox/base/Containerfile
 
-      - name: Audit baked-in AI CLI versions
+      - name: Audit baked-in tool versions
         run: |
           # The image ENTRYPOINT is /bin/bash (no -c), so override it to run
           # audit commands directly rather than having bash treat them as scripts.
@@ -89,6 +89,11 @@ jobs:
             /opt/ai-cli-versions/package.json
           podman run --rm --entrypoint opencode localhost/openshell-sandbox-base:latest-${{ matrix.arch }} --version
           podman run --rm --entrypoint claude localhost/openshell-sandbox-base:latest-${{ matrix.arch }} --version
+          # Run the Electron check as root with its own timeout: matches the
+          # buildah RUN context (root) where the same verification passes, and
+          # timeout prevents any lingering X session from stalling the step.
+          podman run --rm --user root --entrypoint timeout localhost/openshell-sandbox-base:latest-${{ matrix.arch }} \
+            90 xvfb-run -a drawio --no-sandbox --disable-gpu --version
 
       - name: Push base (${{ matrix.arch }})
         if: github.event_name != 'pull_request'

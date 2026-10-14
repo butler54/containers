@@ -151,13 +151,22 @@ RUN printf '#!/bin/sh\nexec /usr/bin/mmdc -p /usr/local/lib/puppeteer-config.jso
       > /usr/local/bin/mmdc && chmod +x /usr/local/bin/mmdc
 
 # === draw.io Desktop (headless export via xvfb) ===
+# Retry-armored fetch; apt installs the local .deb so its Depends: resolve
+# from freshly updated package lists (lists were wiped in the first apt layer,
+# so this step refreshes and wipes again on success). No || true — a failed
+# install MUST fail the build, never silently skip the tool.
 RUN export PATH="/usr/local/sbin:/usr/sbin:/sbin:$PATH" && \
-    DRAWIO_VERSION=$(curl -sf https://api.github.com/repos/jgraph/drawio-desktop/releases/latest \
+    DRAWIO_VERSION=$(curl -fsS --retry 6 --retry-delay 15 --retry-all-errors \
+      https://api.github.com/repos/jgraph/drawio-desktop/releases/latest \
       | grep '"tag_name"' | sed 's/.*"v\(.*\)".*/\1/') && \
-    curl -fsSL "https://github.com/jgraph/drawio-desktop/releases/download/v${DRAWIO_VERSION}/drawio-${TARGETARCH}-${DRAWIO_VERSION}.deb" \
+    curl -fsSL --retry 6 --retry-delay 15 --retry-all-errors \
+      "https://github.com/jgraph/drawio-desktop/releases/download/v${DRAWIO_VERSION}/drawio-${TARGETARCH}-${DRAWIO_VERSION}.deb" \
       -o /tmp/drawio.deb && \
-    dpkg -i /tmp/drawio.deb; apt-get install -f -y && \
-    rm -f /tmp/drawio.deb || true
+    apt-get update && \
+    apt-get install -y --no-install-recommends /tmp/drawio.deb && \
+    dpkg-query -W draw.io && \
+    xvfb-run -a -s "-screen 0 1280x800x24" drawio --no-sandbox --disable-gpu --version && \
+    rm -f /tmp/drawio.deb && rm -rf /var/lib/apt/lists/*
 
 # === Docling (document conversion: PDF, DOCX, HTML → markdown) ===
 # CPU-only PyTorch + Tesseract OCR binding (pip resolves per-arch wheels).
