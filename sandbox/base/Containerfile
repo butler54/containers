@@ -15,7 +15,7 @@
 # build FROM our own freshly-published base in the same workflow, so they
 # reference it by tag (${BASE_IMAGE}) rather than a digest.
 #
-# AI CLI versions (opencode-ai, @anthropic-ai/claude-code) are exact-pinned in
+# AI CLI versions (@opencode/cli, @anthropic-ai/claude-code) are exact-pinned in
 # ./package.json; Dependabot (npm ecosystem) bumps them via PR weekly. See the
 # "AI CLIs" section below.
 FROM ghcr.io/nvidia/openshell-community/sandboxes/base@sha256:aeef1c63f00e2913ea002ccb3aaf925f338b5c5d70e63576f0d95c16a138044e
@@ -113,10 +113,20 @@ RUN GLAB_VERSION=$(curl -sfS --retry 6 --retry-delay 15 --retry-all-errors \
 # Installed explicitly rather than inheriting whatever the upstream base
 # bundles (upstream has gone 2+ months between publishes; an old baked-in
 # CLI misses newly released models/runtimes).
+#
+# @opencode/cli (OpenCode 2.x) resolves its native binary via per-platform
+# optionalDependencies (e.g. @opencode/cli-linux-arm64), so the bin works even
+# when npm skips/flags the package's postinstall script. V1's `opencode-ai`
+# package is gone; both series expose the same `opencode` command. The upstream
+# base bundles a V1 opencode at /usr/bin/opencode (npm prefix is /usr) — remove
+# it first: npm refuses (EEXIST) to link a different package's bin over it.
 COPY package.json /opt/ai-cli-versions/package.json
-RUN jq -r '.dependencies | to_entries[] | "\(.key)@\(.value)"' \
+RUN npm uninstall -g opencode-ai 2>/dev/null || true; \
+    rm -f /usr/bin/opencode /usr/bin/opencode2 && \
+    jq -r '.dependencies | to_entries[] | "\(.key)@\(.value)"' \
       /opt/ai-cli-versions/package.json \
-      | xargs -r npm install -g --no-audit --no-fund
+      | xargs -r npm install -g --no-audit --no-fund && \
+    command -v opencode
 
 # === Node global tools ===
 RUN npm install -g @googleworkspace/cli
