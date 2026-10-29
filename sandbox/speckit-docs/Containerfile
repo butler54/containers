@@ -1,7 +1,8 @@
 # OpenShell sandbox — SpecKit docs profile (documents, presentations & diagrams)
 #
 # Thin config layer on top of the pre-built base image.
-# Adds draw.io libs dir and GWS config dir vs the standard SpecKit profile.
+# Adds draw.io libs dir and GWS config dir vs the standard SpecKit profile,
+# plus the D2 + Structurizr diagram DSL toolchain (see below).
 # Published as ghcr.io/butler54/openshell-sandbox-speckit-docs:latest (multi-arch).
 #
 # No user-specific config: git identity is injected at sandbox creation by
@@ -41,6 +42,74 @@ RUN tmpdir=$(mktemp -d) && \
 RUN mkdir -p /sandbox/.ssh /sandbox/.config/gcloud /sandbox/.config/gws \
         /sandbox/.drawio-libs && \
     chown -R sandbox:sandbox /sandbox
+
+# === Diagram DSL toolchain: D2 + Structurizr (speckit-docs only) ===
+# Extends the Mermaid (mmdc) + draw.io toolchain inherited from base with the
+# two DSLs that anchor version-controlled, diffable diagram sources:
+#
+#   .d2 ----------------------------------------------------(d2)----> .svg/.png
+#   workspace.dsl --(structurizr export -format mermaid)--> .mmd --(mmdc)--> .svg/.png
+#
+# Native Structurizr PNG/SVG export is deliberately NOT supported: it is
+# preview-only upstream and drives Microsoft Playwright for Java with a
+# runtime Chromium download the sandbox network policy denies. Mermaid export
+# needs no browser — mmdc (already in base) renders the result.
+
+# Provided automatically by buildah (amd64 | arm64). Declared so RUN steps see it.
+ARG TARGETARCH
+
+# --- D2 (diagram DSL) — arch-parameterized, checksum-verified ---
+# Static Go binary. The release archive is installed whole to /opt/d2 (v0.9.0
+# ships bin/, man/ and scripts/; future releases may add lib/ — keeping the
+# archive together preserves font/theme loading if they do).
+ARG D2_VERSION=v0.9.0
+RUN D2_TARBALL="d2-${D2_VERSION}-linux-${TARGETARCH}.tar.gz" && \
+    curl -fsSL --retry 6 --retry-delay 15 --retry-all-errors \
+      "https://github.com/terrastruct/d2/releases/download/${D2_VERSION}/${D2_TARBALL}" \
+      -o "/tmp/${D2_TARBALL}" && \
+    curl -fsSL --retry 6 --retry-delay 15 --retry-all-errors \
+      "https://github.com/terrastruct/d2/releases/download/${D2_VERSION}/SHA256SUMS" \
+      -o /tmp/d2.SHA256SUMS && \
+    cd /tmp && grep "${D2_TARBALL}" d2.SHA256SUMS | sha256sum -c - && \
+    mkdir -p /opt/d2 && \
+    tar -xzf "/tmp/${D2_TARBALL}" --strip-components=1 -C /opt/d2 && \
+    ln -sf /opt/d2/bin/d2 /usr/local/bin/d2 && \
+    rm -f "/tmp/${D2_TARBALL}" /tmp/d2.SHA256SUMS && \
+    d2 --version
+
+# --- Structurizr (C4 "models as code") — export CLI via Java 21, no rebase ---
+# Consolidated tool: `structurizr <command>` = `java -jar structurizr.war
+# <command>`. validate/export/inspect/list are free; `server` is licence-only
+# and deliberately not configured. Ubuntu 24.04's openjdk-21 satisfies the
+# documented Java 21 requirement. download.structurizr.com publishes no
+# checksum file, so the digest is pinned here (verified against the artefact
+# at pin time); the war is downloaded at image-build time, never committed to
+# the repo. Launcher flags mirror upstream's structurizr.sh.
+ARG STRUCTURIZR_VERSION=2026.09.19
+ARG STRUCTURIZR_SHA256=ac1a2806e246364b88261a542a36ca7f3006ef48e5de68830afa8672f58690f1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        openjdk-21-jre-headless \
+    && rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /opt/structurizr && \
+    curl -fsSL --retry 6 --retry-delay 15 --retry-all-errors \
+      "https://download.structurizr.com/structurizr-${STRUCTURIZR_VERSION}.war" \
+      -o /opt/structurizr/structurizr.war && \
+    echo "${STRUCTURIZR_SHA256}  /opt/structurizr/structurizr.war" | sha256sum -c - && \
+    printf '#!/bin/sh\nexec java -Dio.netty.noUnsafe=true --enable-native-access=ALL-UNNAMED -jar /opt/structurizr/structurizr.war "$@"\n' \
+      > /usr/local/bin/structurizr && \
+    chmod 755 /usr/local/bin/structurizr && \
+    structurizr version
+
+# --- Mermaid config — required by Structurizr's Mermaid export ---
+# Structurizr's Mermaid output only renders correctly with
+# "securityLevel": "loose" (see docs.structurizr.com/export/mermaid). Bake a
+# default config and override the inherited mmdc wrapper to pass it via -c
+# unless the caller supplies their own config (an explicit -c/--configFile
+# still takes precedence — mermaid-cli honors the last one passed).
+RUN printf '{"securityLevel":"loose"}\n' > /usr/local/lib/mermaid-config.json && \
+    printf '#!/bin/sh\nfor arg in "$@"; do\n  case "$arg" in\n    -c|--configFile|--configFile=*)\n      exec /usr/bin/mmdc -p /usr/local/lib/puppeteer-config.json "$@" ;;\n  esac\ndone\nexec /usr/bin/mmdc -p /usr/local/lib/puppeteer-config.json -c /usr/local/lib/mermaid-config.json "$@"\n' \
+      > /usr/local/bin/mmdc && chmod +x /usr/local/bin/mmdc && \
+    mmdc --version
 
 USER sandbox
 

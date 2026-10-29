@@ -65,6 +65,19 @@ no external registry secret needed):
   self-verifying at build time: apt resolves the .deb's dependencies from a fresh
   package list and the step fails the build if the binary can't launch headlessly —
   a broken draw.io can no longer ship silently.
+- **Diagram DSLs (speckit-docs only):** the `speckit-docs` layer adds **D2**
+  (`d2 in.d2 out.svg`; arch-parameterized, SHA256SUMS-verified install) and
+  **Structurizr** (C4 models-as-code: `structurizr validate|export ...` via
+  `openjdk-21-jre-headless`), completing the Mermaid + draw.io toolchain inherited
+  from base. The supported pipeline is browser-free:
+  `workspace.dsl` → `structurizr export -format mermaid` → `.mmd` → `mmdc` →
+  `.svg`/`.png`. The layer bakes a default Mermaid config with
+  `"securityLevel": "loose"` (required by Structurizr's Mermaid output) and the
+  `mmdc` wrapper passes it unless the caller supplies their own config. Native
+  Structurizr PNG/SVG export is deliberately **not** supported (preview-only
+  upstream, and it needs a runtime Chromium download the sandbox network policy
+  denies). The Structurizr `.war` is sha256-pinned in the Containerfile and
+  downloaded at image-build time — no binaries are committed to the repo.
 - **Pinning / updates:** the upstream base is pinned by manifest-list digest and bumped
   by **Dependabot** (`docker` + `github-actions` ecosystems). Raw `curl`-downloaded tools
   in the base (Go, `oc`, helm, `yq`, `glab`, draw.io) track "latest" and are refreshed by
