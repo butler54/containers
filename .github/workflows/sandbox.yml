@@ -187,12 +187,125 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/openshell-sandbox-base@${{ needs.base-manifest.outputs.digest }}
 
+      # speckit-docs carries its own toolchain (D2, Java 21 + Structurizr,
+      # Mermaid securityLevel config) on top of base — audit it before push.
+      - name: Audit diagram toolchain (speckit-docs, ${{ matrix.arch }})
+        if: matrix.image.name == 'openshell-sandbox-speckit-docs'
+        run: |
+          IMG="localhost/openshell-sandbox-speckit-docs:latest-${{ matrix.arch }}"
+          podman run --rm --entrypoint d2 "$IMG" --version
+          podman run --rm --entrypoint java "$IMG" -version
+          podman run --rm --entrypoint structurizr "$IMG" version
+          # Smoke: D2 render
+          podman run --rm --entrypoint bash "$IMG" -c '
+            set -euxo pipefail
+            cd "$(mktemp -d)"
+            printf "x -> y: hello\n" > smoke.d2
+            d2 smoke.d2 smoke.svg
+            test -s smoke.svg
+          '
+          # Smoke: the no-browser pipeline — DSL -> Mermaid export -> mmdc SVG
+          podman run --rm --entrypoint bash "$IMG" -c '
+            set -euxo pipefail
+            cd "$(mktemp -d)"
+            cat > workspace.dsl <<"EOF"
+          workspace {
+            model {
+              user = person "User"
+              sys = softwareSystem "System"
+              user -> sys "uses"
+            }
+            views {
+              systemContext sys "Context" {
+                include *
+                autolayout
+              }
+            }
+          }
+          EOF
+            structurizr validate -workspace workspace.dsl
+            structurizr export -format mermaid -workspace workspace.dsl -output out
+            test -s out/structurizr-Context.mmd
+            mmdc -i out/structurizr-Context.mmd -o out/Context.svg -b white
+            test -s out/Context.svg
+          '
+
       - name: Push layer ${{ matrix.image.name }} (${{ matrix.arch }})
         uses: redhat-actions/push-to-registry@94ade333c38ecc0e60e94785125d9a52ca423b37 # v3
         with:
           image: ${{ matrix.image.name }}
           tags: latest-${{ matrix.arch }}
           registry: ${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}
+
+  # ---- PR validation for the speckit-docs layer (build-only, no publish) ----
+  # The layers job above only runs post-merge; this job makes the PR its own
+  # acceptance test for the speckit-docs diagram toolchain. It builds the
+  # layer FROM the published base tag (the PR cannot reference the not-yet-
+  # published manifest digest) and runs the same audit as the publish path.
+  speckit-docs-validate:
+    if: github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Ensure buildah/podman
+        run: |
+          command -v buildah >/dev/null && command -v podman >/dev/null || \
+            { sudo apt-get update && sudo apt-get install -y buildah podman; }
+
+      - name: Build layer openshell-sandbox-speckit-docs (${{ matrix.arch }})
+        uses: redhat-actions/buildah-build@719e3c40d8af9790c23eca13f7daa339f2867034 # v3
+        with:
+          image: openshell-sandbox-speckit-docs
+          tags: latest-${{ matrix.arch }}
+          archs: ${{ matrix.arch }}
+          containerfiles: ./sandbox/speckit-docs/Containerfile
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/openshell-sandbox-base:latest
+
+      - name: Audit diagram toolchain (speckit-docs, ${{ matrix.arch }})
+        run: |
+          IMG="localhost/openshell-sandbox-speckit-docs:latest-${{ matrix.arch }}"
+          podman run --rm --entrypoint d2 "$IMG" --version
+          podman run --rm --entrypoint java "$IMG" -version
+          podman run --rm --entrypoint structurizr "$IMG" version
+          # Smoke: D2 render
+          podman run --rm --entrypoint bash "$IMG" -c '
+            set -euxo pipefail
+            cd "$(mktemp -d)"
+            printf "x -> y: hello\n" > smoke.d2
+            d2 smoke.d2 smoke.svg
+            test -s smoke.svg
+          '
+          # Smoke: the no-browser pipeline — DSL -> Mermaid export -> mmdc SVG
+          podman run --rm --entrypoint bash "$IMG" -c '
+            set -euxo pipefail
+            cd "$(mktemp -d)"
+            cat > workspace.dsl <<"EOF"
+          workspace {
+            model {
+              user = person "User"
+              sys = softwareSystem "System"
+              user -> sys "uses"
+            }
+            views {
+              systemContext sys "Context" {
+                include *
+                autolayout
+              }
+            }
+          }
+          EOF
+            structurizr validate -workspace workspace.dsl
+            structurizr export -format mermaid -workspace workspace.dsl -output out
+            test -s out/structurizr-Context.mmd
+            mmdc -i out/structurizr-Context.mmd -o out/Context.svg -b white
+            test -s out/Context.svg
+          '
 
   layers-manifest:
     if: github.event_name != 'pull_request'
