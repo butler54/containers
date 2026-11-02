@@ -16,6 +16,13 @@ RUN curl --fail --show-error --silent --location --proto '=https' \
 COPY standard-ghcr/architecture-docs/requirements.lock /tmp/requirements.lock
 RUN /opt/python/bin/python3.12 -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: --require-hashes -r /tmp/requirements.lock
+# Mike is a Zensical-compatible fork with no wheel release; pin it by source
+# archive hash. Its runtime dependencies are hash-pinned in requirements.lock.
+RUN curl --fail --show-error --silent --location --proto '=https' \
+        https://github.com/squidfunk/mike/archive/2d4ad799442f4592db8ad53b179bfb33db8c69ac.tar.gz -o /tmp/mike.tar.gz && \
+    echo '346dddd4bd7128338e91a9c426a4a44109d8fc47e7dbd1b7d0cefdb03d43d219  /tmp/mike.tar.gz' | sha256sum -c - && \
+    /opt/venv/bin/pip install --no-cache-dir --no-deps /tmp/mike.tar.gz && \
+    rm /tmp/mike.tar.gz
 
 FROM docker.io/structurizr/structurizr:2026.09.19-playwright@sha256:c89b54231c42da90484e6bf4e398f36a40123cb4b12c9d5f09c27eef3dc9644c AS structurizr
 # Remove unneeded browser families only from this build stage's own assets.
@@ -119,7 +126,8 @@ RUN chmod 0755 /usr/local/bin/structurizr && \
     python3.12 -c 'import sys; assert sys.version_info[:3] == (3,12,15)' && \
     test "$(node --version)" = v24.21.0 && \
     xelatex --version | grep -F 'TeX Live 2026' && \
-    command -v rsvg-convert && command -v pdftoppm && command -v trestle && command -v zensical
+    command -v rsvg-convert && command -v pdftoppm && command -v trestle && command -v zensical && \
+    command -v mike && mike --version
 USER 65532:0
 WORKDIR /work
 ENTRYPOINT []

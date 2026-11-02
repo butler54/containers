@@ -19,7 +19,7 @@ def run(*args: str, cwd: Path | None = None) -> str:
 def main() -> None:
     if os.getuid() == 0:
         raise RuntimeError("Image smoke test must run as non-root")
-    for package, version in {"zensical": "0.0.68", "compliance-trestle": "5.2.0"}.items():
+    for package, version in {"zensical": "0.0.68", "compliance-trestle": "5.2.0", "mike": "2.2.0+zensical-0.1.0"}.items():
         if importlib.metadata.version(package) != version:
             raise RuntimeError(f"Wrong {package} version")
     versions = {name: run(*command).splitlines()[0] for name, command in {
@@ -27,6 +27,7 @@ def main() -> None:
         "npm": ("npm", "--version"),
         "d2": ("d2", "--version"), "pandoc": ("pandoc", "--version"),
         "xelatex": ("xelatex", "--version"), "rsvg": ("rsvg-convert", "--version"),
+        "mike": ("mike", "--version"),
         "java": ("java", "-version"),
     }.items()}
     with tempfile.TemporaryDirectory(prefix="architecture-docs-") as directory:
