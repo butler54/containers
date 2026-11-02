@@ -36,6 +36,6 @@ install("https://registry.npmjs.org/npm/-/npm-11.19.1.tgz",
 install("https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.11.tgz",
         "awigjhi6cLTh90bdw6+QJ9CtmJmyYhEIi70iCbc8Rozn04Fw9FeQIBjv/E22FFGuCGx1bLJyUfB64x/szUSXUg==",
         ROOT / "node_modules/brace-expansion", "sha512")
-install("https://registry.npmjs.org/undici/-/undici-6.28.1.tgz",
-        "zWpdTVD54H48CIybL0rWQ3ukpb9d23wM7eH5RtfdmeP70cWHNjtfo7P4vZX+5CoDcO53J4Pu5uXp7lNfjc6DRA==",
+install("https://registry.npmjs.org/undici/-/undici-6.29.1.tgz",
+        "EvRlUt/QqAEvXdQeRMYUfwOQsfzpDztykrG2owGEE/rBOBoYv9uF39ZzsNDh4lTFHhTr2XOZjKkYgueD12ZmGA==",
         ROOT / "node_modules/undici", "sha512")

@@ -1,0 +1,28 @@
+# Scoped security exceptions for the architecture-docs image.
+#
+# d2 v0.9.0 (2026-09-07) is the latest upstream release. Its bundled Go
+# standard library and golang.org/x/net versions have published fixes, but
+# they require an upstream rebuild that does not exist yet. Rebuilding d2
+# ourselves is tracked separately; until then the exception is limited to the
+# d2 binary and expires automatically.
+vulnerabilities:
+  - id: CVE-2026-78669
+    paths:
+      - usr/local/bin/d2
+    statement: d2 v0.9.0 is the latest upstream release; no rebuilt binary is available.
+    expired_at: 2027-02-01
+  - id: CVE-2026-111943
+    paths:
+      - usr/local/bin/d2
+    statement: d2 v0.9.0 is the latest upstream release; no rebuilt binary is available.
+    expired_at: 2027-02-01
+  - id: CVE-2026-78667
+    paths:
+      - usr/local/bin/d2
+    statement: d2 v0.9.0 is the latest upstream release; no rebuilt binary is available.
+    expired_at: 2027-02-01
+  - id: CVE-2026-97031
+    paths:
+      - usr/local/bin/d2
+    statement: d2 v0.9.0 is the latest upstream release; no rebuilt binary is available.
+    expired_at: 2027-02-01
