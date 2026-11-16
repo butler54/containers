@@ -30,11 +30,15 @@
 # No secrets or user-specific config in this image — Slack/Signal tokens and
 # accounts are injected at sandbox creation time by the minilab deployment.
 
+# Global-scope ARG: must precede ANY FROM to be usable in FROM lines (an ARG
+# after a FROM is scoped to that stage only, and `FROM ${BASE_IMAGE}` then
+# resolves empty — "no FROM statement found").
+ARG BASE_IMAGE=ghcr.io/butler54/openshell-sandbox-base:latest
+
 # JRE 25 build stage: copied out of the official Temurin image so buildah
 # resolves the right arch from the multi-arch manifest automatically.
 FROM eclipse-temurin:25-jre@sha256:a640968ae55027b322cedd5f8228b01a84baff0b9e9360e47601c6a111ba1699 AS jre25
 
-ARG BASE_IMAGE=ghcr.io/butler54/openshell-sandbox-base:latest
 FROM ${BASE_IMAGE}
 
 USER root
