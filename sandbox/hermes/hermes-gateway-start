@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Start the Hermes gateway inside an OpenShell sandbox (main process).
+#
+# Responsibilities:
+#   1. Bind HERMES_HOME to the persistent workspace (/sandbox/.hermes) so
+#      config, sessions, memory and skills survive sandbox restarts, while
+#      the hermes checkout + tools stay image-owned (version == image tag).
+#   2. Start the signal-cli daemon on loopback when a Signal account is
+#      configured AND the linked-device trust store exists (device linking
+#      is a separate one-time interactive step: `signal-cli link`).
+#   3. exec the hermes gateway (replaces this shell; the sandbox lifecycle
+#      owns restarts).
+#
+# Environment (injected by the minilab deployment at sandbox creation):
+#   SIGNAL_ACCOUNT   — E.164 number of the linked Signal device
+#   SIGNAL_HTTP_URL  — signal-cli daemon endpoint (default 127.0.0.1:8080)
+set -euo pipefail
+
+export HERMES_HOME=/sandbox/.hermes
+mkdir -p "$HERMES_HOME" /sandbox/.hermes/logs
+
+# Image-owned checkout + tools, symlinked into the persistent home.
+[ -e "$HERMES_HOME/hermes-agent" ] || ln -s /opt/hermes/hermes-agent "$HERMES_HOME/hermes-agent"
+[ -e "$HERMES_HOME/tools" ] || [ ! -d /opt/hermes/tools ] || ln -s /opt/hermes/tools "$HERMES_HOME/tools"
+
+# --- signal-cli daemon (only when linked) ---
+SIGNAL_DATA=/sandbox/.local/share/signal-cli
+if [ -n "${SIGNAL_ACCOUNT:-}" ] && [ -d "$SIGNAL_DATA/data" ]; then
+  SIGNAL_HTTP_URL="${SIGNAL_HTTP_URL:-http://127.0.0.1:8080}"
+  SIGNAL_BIND="${SIGNAL_HTTP_URL#http://}"
+  echo "starting signal-cli daemon for ${SIGNAL_ACCOUNT} on ${SIGNAL_BIND}"
+  nohup signal-cli -u "$SIGNAL_ACCOUNT" daemon --http "$SIGNAL_BIND" \
+    >> /sandbox/.hermes/logs/signal-cli.log 2>&1 &
+  # Wait briefly for the daemon socket before hermes connects to it.
+  for _ in $(seq 1 30); do
+    curl -sf -o /dev/null "http://${SIGNAL_BIND}/v1/about" 2>/dev/null && break
+    sleep 1
+  done
+elif [ -n "${SIGNAL_ACCOUNT:-}" ]; then
+  echo "SIGNAL_ACCOUNT set but no linked device at ${SIGNAL_DATA}" \
+    "(run 'signal-cli link -n HermesAgent' interactively first); starting hermes without Signal" \
+    | tee -a /sandbox/.hermes/logs/signal-cli.log
+fi
+
+exec hermes gateway "$@"

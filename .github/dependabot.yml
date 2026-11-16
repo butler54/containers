@@ -7,6 +7,7 @@ updates:
   - package-ecosystem: "docker"
     directories:
       - "/sandbox/base"
+      - "/sandbox/hermes"
       - "/standard-ghcr/qmp"
       - "/standard-quay/build-utils"
       - "/standard-quay/coredumps"

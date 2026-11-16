@@ -1,0 +1,90 @@
+# OpenShell sandbox — Hermes agent layer
+#
+# Thin agent layer on top of the pre-built base image: Hermes Agent
+# (NousResearch) plus signal-cli on a JRE, for an always-on messaging agent
+# sandbox deployed on the minilab OpenShift cluster (see minilab
+# docs/hermes-agent.md). Follows the speckit-docs precedent: a thin layer
+# that carries its own toolchain on top of the shared base.
+#
+# Published as ghcr.io/butler54/openshell-sandbox-hermes:latest (multi-arch:
+# linux/amd64, linux/arm64).
+#
+# Version pins (bump via PR):
+#   - eclipse-temurin:25-jre  — manifest-list digest pin (Dependabot docker
+#     ecosystem bumps it; signal-cli requires JRE 25 and Ubuntu noble apt
+#     tops out at openjdk-21, hence the Temurin copy instead of apt)
+#   - HERMES_COMMIT            — exact hermes-agent release commit (v0.23.1)
+#   - SIGNAL_CLI_VERSION/SHA256 — signal-cli release tarball (v0.14.10)
+#
+# Runtime layout:
+#   /opt/hermes                    — hermes checkout + tools (image-owned;
+#                                   version == image tag; upgrades are image
+#                                   rebuilds, not in-sandbox `hermes update`)
+#   /opt/java/jre25                — Temurin JRE 25 (signal-cli runtime)
+#   /sandbox/.hermes               — HERMES_HOME at runtime: state (config,
+#                                   sessions, memory, skills) lives on the
+#                                   sandbox workspace PVC; hermes-gateway-start
+#                                   symlinks the image-owned checkout in
+#   /sandbox/.local/share/signal-cli — linked-device trust store (PVC)
+#
+# No secrets or user-specific config in this image — Slack/Signal tokens and
+# accounts are injected at sandbox creation time by the minilab deployment.
+
+# Global-scope ARG: must precede ANY FROM to be usable in FROM lines (an ARG
+# after a FROM is scoped to that stage only, and `FROM ${BASE_IMAGE}` then
+# resolves empty — "no FROM statement found").
+ARG BASE_IMAGE=ghcr.io/butler54/openshell-sandbox-base:latest
+
+# JRE 25 build stage: copied out of the official Temurin image so buildah
+# resolves the right arch from the multi-arch manifest automatically.
+FROM eclipse-temurin:25-jre@sha256:a640968ae55027b322cedd5f8228b01a84baff0b9e9360e47601c6a111ba1699 AS jre25
+
+FROM ${BASE_IMAGE}
+
+USER root
+
+# === JRE 25 (signal-cli's minimum) ===
+COPY --from=jre25 /opt/java/openjdk /opt/java/jre25
+ENV JAVA_HOME=/opt/java/jre25
+ENV PATH="/opt/java/jre25/bin:/opt/hermes/bin:${PATH}"
+
+# === signal-cli v0.14.10 (sha256-verified release tarball) ===
+ARG SIGNAL_CLI_VERSION=0.14.10
+ARG SIGNAL_CLI_SHA256=706a57d9faae7525cf732936efdabf210146e3c83f9e8ae7e4e62f5946121c33
+RUN curl -fsSL -o /tmp/signal-cli.tar.gz \
+      "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}.tar.gz" \
+    && echo "${SIGNAL_CLI_SHA256}  /tmp/signal-cli.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/signal-cli.tar.gz -C /opt \
+    && ln -sf "/opt/signal-cli-${SIGNAL_CLI_VERSION}/bin/signal-cli" /usr/local/bin/signal-cli \
+    && rm -f /tmp/signal-cli.tar.gz
+
+# === Hermes Agent v0.23.1 (exact commit pin) ===
+# Non-interactive skips the setup/gateway wizards; browser and computer-use
+# drivers are skipped for a lean messaging-agent image. HOME is pointed at
+# /tmp for the install so nothing accumulates under /sandbox (the runtime
+# workspace mount would hide it anyway).
+ARG HERMES_COMMIT=3b421578588243f920886e6fe79a6faa87ea026e
+ENV HERMES_HOME=/opt/hermes
+RUN mkdir -p /opt/hermes && chown sandbox:sandbox /opt/hermes
+USER sandbox
+RUN env HOME=/tmp curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o /tmp/hermes-install.sh \
+    && env HOME=/tmp bash /tmp/hermes-install.sh --commit "${HERMES_COMMIT}" \
+         --non-interactive --skip-browser --skip-computer-use \
+    && rm -f /tmp/hermes-install.sh
+USER root
+# Publish the hermes command system-wide regardless of where the installer
+# placed it (expected /opt/hermes/bin/hermes; the find is a fallback).
+RUN { [ -x /opt/hermes/bin/hermes ] && ln -sf /opt/hermes/bin/hermes /usr/local/bin/hermes; } \
+    || find /opt/hermes -maxdepth 3 -type f -name hermes -perm -u+x -exec ln -sf {} /usr/local/bin/hermes \; \
+    || { echo "hermes command not found after install" >&2; exit 1; }
+
+# === Gateway start script (the sandbox's main process command) ===
+COPY hermes-gateway-start /usr/local/bin/hermes-gateway-start
+RUN chmod 0755 /usr/local/bin/hermes-gateway-start
+
+# Keep /sandbox owned by the runtime user (installer ran with HOME=/tmp)
+RUN mkdir -p /sandbox/.local/share && chown -R sandbox:sandbox /sandbox
+
+USER sandbox
+
+ENTRYPOINT ["/bin/bash"]
