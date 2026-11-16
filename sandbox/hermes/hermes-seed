@@ -1,0 +1,30 @@
+#!/bin/sh
+# hermes-seed — seed the persistent hermes home from the image's pristine copy.
+#
+# The image installs hermes with HERMES_HOME=/sandbox/.hermes (so all recorded
+# absolute install paths point there), then moves the finished home to
+# /opt/hermes-pristine. At runtime /sandbox is the persistent workspace: on
+# first boot this script copies the pristine home to /sandbox/.hermes, making
+# every recorded path valid AND putting all mutable state (config, sessions,
+# memory, skills) on persistent storage.
+#
+# Idempotent: the .seeded marker makes it a no-op after the first run.
+# Upgrades: a new image + `rm /sandbox/.hermes/.seeded` (or sandbox deletion)
+# reseeds; state dirs under /sandbox/.hermes survive sandbox restarts.
+set -eu
+H=/sandbox/.hermes
+PRISTINE=/opt/hermes-pristine
+
+[ -d "$PRISTINE" ] || { echo "hermes-seed: no pristine home at $PRISTINE" >&2; exit 1; }
+
+if [ ! -e "$H/.seeded" ]; then
+  echo "hermes-seed: seeding $H from $PRISTINE (first boot)" >&2
+  mkdir -p "$H"
+  cp -a "$PRISTINE/." "$H/"
+  # Stale bytecode from the build interpreter can fail under the runtime
+  # python ("bad marshal data"); clear it so it recompiles on first use.
+  find "$H" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
+  find "$H" -name '*.pyc' -delete 2>/dev/null || true
+  : > "$H/.seeded"
+  echo "hermes-seed: done" >&2
+fi

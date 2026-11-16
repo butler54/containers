@@ -2,9 +2,10 @@
 # Start the Hermes gateway inside an OpenShell sandbox (main process).
 #
 # Responsibilities:
-#   1. Bind HERMES_HOME to the persistent workspace (/sandbox/.hermes) so
-#      config, sessions, memory and skills survive sandbox restarts, while
-#      the hermes checkout + tools stay image-owned (version == image tag).
+#   1. Seed the persistent hermes home (/sandbox/.hermes) from the image's
+#      pristine copy on first boot — hermes-seed (idempotent). All install
+#      state paths recorded at build time point at /sandbox/.hermes, and
+#      config/sessions/memory/skills persist across sandbox restarts.
 #   2. Start the signal-cli daemon on loopback when a Signal account is
 #      configured AND the linked-device trust store exists (device linking
 #      is a separate one-time interactive step: `signal-cli link`).
@@ -16,12 +17,13 @@
 #   SIGNAL_HTTP_URL  — signal-cli daemon endpoint (default 127.0.0.1:8080)
 set -euo pipefail
 
-export HERMES_HOME=/sandbox/.hermes
-mkdir -p "$HERMES_HOME" /sandbox/.hermes/logs
+# The sandbox runtime overrides PATH (venv-first); restore the JRE path —
+# signal-cli's wrapper resolves java via PATH/JAVA_HOME.
+export PATH="/opt/java/jre25/bin:${PATH}"
 
-# Image-owned checkout + tools, symlinked into the persistent home.
-[ -e "$HERMES_HOME/hermes-agent" ] || ln -s /opt/hermes/hermes-agent "$HERMES_HOME/hermes-agent"
-[ -e "$HERMES_HOME/tools" ] || [ ! -d /opt/hermes/tools ] || ln -s /opt/hermes/tools "$HERMES_HOME/tools"
+/usr/local/bin/hermes-seed
+export HERMES_HOME=/sandbox/.hermes
+mkdir -p /sandbox/.hermes/logs
 
 # --- signal-cli daemon (only when linked) ---
 SIGNAL_DATA=/sandbox/.local/share/signal-cli
@@ -42,4 +44,4 @@ elif [ -n "${SIGNAL_ACCOUNT:-}" ]; then
     | tee -a /sandbox/.hermes/logs/signal-cli.log
 fi
 
-exec hermes gateway "$@"
+exec /sandbox/.hermes/hermes-agent/hermes gateway "$@"
