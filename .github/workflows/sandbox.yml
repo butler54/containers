@@ -160,6 +160,7 @@ jobs:
           - { dir: docs,         name: openshell-sandbox-docs }
           - { dir: speckit,      name: openshell-sandbox-speckit }
           - { dir: speckit-docs, name: openshell-sandbox-speckit-docs }
+          - { dir: hermes,       name: openshell-sandbox-hermes }
         arch: [amd64, arm64]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     steps:
@@ -184,8 +185,19 @@ jobs:
           tags: latest-${{ matrix.arch }}
           archs: ${{ matrix.arch }}
           containerfiles: ./sandbox/${{ matrix.image.dir }}/Containerfile
+          # Per-image context so Containerfiles can COPY helper files
+          # (hermes ships hermes-gateway-start).
+          context: ./sandbox/${{ matrix.image.dir }}
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/openshell-sandbox-base@${{ needs.base-manifest.outputs.digest }}
+
+      # The hermes layer carries the hermes-agent checkout + signal-cli +
+      # Temurin JRE on top of base — a large build; free runner disk first.
+      - name: Free disk space (hermes layer)
+        if: matrix.image.name == 'openshell-sandbox-hermes'
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost || true
+          df -h /
 
       # speckit-docs carries its own toolchain (D2, Java 21 + Structurizr,
       # Mermaid securityLevel config) on top of base — audit it before push.
@@ -307,6 +319,58 @@ jobs:
             test -s out/Context.svg
           '
 
+  # ---- PR validation for the hermes layer (build-only, no publish) ----
+  # Same shape as speckit-docs-validate: PRs cannot reference the not-yet-
+  # published base manifest digest, so build FROM the published base tag and
+  # audit the toolchain the layer carries.
+  hermes-validate:
+    if: github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Ensure buildah/podman
+        run: |
+          command -v buildah >/dev/null && command -v podman >/dev/null || \
+            { sudo apt-get update && sudo apt-get install -y buildah podman; }
+
+      - name: Free disk space (hermes layer is large)
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost || true
+          df -h /
+
+      - name: Build layer openshell-sandbox-hermes (${{ matrix.arch }})
+        uses: redhat-actions/buildah-build@719e3c40d8af9790c23eca13f7daa339f2867034 # v3
+        with:
+          image: openshell-sandbox-hermes
+          tags: latest-${{ matrix.arch }}
+          archs: ${{ matrix.arch }}
+          containerfiles: ./sandbox/hermes/Containerfile
+          context: ./sandbox/hermes
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/openshell-sandbox-base:latest
+
+      - name: Audit hermes toolchain (${{ matrix.arch }})
+        run: |
+          IMG="localhost/openshell-sandbox-hermes:latest-${{ matrix.arch }}"
+          # JRE 25 on PATH and signal-cli runnable (both must resolve without
+          # extra env — they are baked into the image).
+          podman run --rm --entrypoint java "$IMG" -version
+          podman run --rm --entrypoint signal-cli "$IMG" --version
+          # hermes command published system-wide and reporting the pinned release
+          HERMES_VERSION="$(podman run --rm --entrypoint hermes "$IMG" --version)"
+          echo "hermes version: ${HERMES_VERSION}"
+          case "${HERMES_VERSION}" in
+            *0.23.1*) ;;
+            *) echo "::error::hermes is expected to be 0.23.1, got '${HERMES_VERSION}'" && exit 1 ;;
+          esac
+          # Gateway start script present, executable, and syntax-valid.
+          podman run --rm --entrypoint bash "$IMG" -n /usr/local/bin/hermes-gateway-start
+
   layers-manifest:
     if: github.event_name != 'pull_request'
     needs: layers
@@ -321,6 +385,7 @@ jobs:
           - openshell-sandbox-docs
           - openshell-sandbox-speckit
           - openshell-sandbox-speckit-docs
+          - openshell-sandbox-hermes
     runs-on: ubuntu-latest
     steps:
       - name: Ensure podman
