@@ -1,0 +1,8 @@
+#!/bin/sh
+# hermes — command shim. Seeds the persistent home on first use (see
+# hermes-seed), then execs the hermes launcher from it so the install-state
+# paths recorded at build time (/sandbox/.hermes/...) resolve consistently.
+set -eu
+/usr/local/bin/hermes-seed
+export HERMES_HOME=/sandbox/.hermes
+exec /sandbox/.hermes/hermes-agent/hermes "$@"

@@ -17,15 +17,19 @@
 #   - SIGNAL_CLI_VERSION/SHA256 — signal-cli release tarball (v0.14.10)
 #
 # Runtime layout:
-#   /opt/hermes                    — hermes checkout + tools (image-owned;
-#                                   version == image tag; upgrades are image
-#                                   rebuilds, not in-sandbox `hermes update`)
-#   /opt/java/jre25                — Temurin JRE 25 (signal-cli runtime)
-#   /sandbox/.hermes               — HERMES_HOME at runtime: state (config,
-#                                   sessions, memory, skills) lives on the
-#                                   sandbox workspace PVC; hermes-gateway-start
-#                                   symlinks the image-owned checkout in
-#   /sandbox/.local/share/signal-cli — linked-device trust store (PVC)
+#   /opt/hermes-pristine         — the finished hermes home as installed with
+#                                  HERMES_HOME=/sandbox/.hermes (so every
+#                                  recorded absolute install path points at
+#                                  /sandbox/.hermes). Image-owned; version ==
+#                                  image tag; upgrades are image rebuilds +
+#                                  reseeding, not in-sandbox `hermes update`.
+#   /sandbox/.hermes             — HERMES_HOME at runtime: hermes-seed copies
+#                                  the pristine home here on first boot, so
+#                                  recorded paths resolve AND state (config,
+#                                  sessions, memory, skills) persists on the
+#                                  sandbox workspace volume.
+#   /opt/java/jre25              — Temurin JRE 25 (signal-cli runtime)
+#   /sandbox/.local/share/signal-cli — linked-device trust store (persistent)
 #
 # No secrets or user-specific config in this image — Slack/Signal tokens and
 # accounts are injected at sandbox creation time by the minilab deployment.
@@ -46,7 +50,7 @@ USER root
 # === JRE 25 (signal-cli's minimum) ===
 COPY --from=jre25 /opt/java/openjdk /opt/java/jre25
 ENV JAVA_HOME=/opt/java/jre25
-ENV PATH="/opt/java/jre25/bin:/opt/hermes/bin:${PATH}"
+ENV PATH="/opt/java/jre25/bin:${PATH}"
 
 # === signal-cli v0.14.10 (sha256-verified release tarball) ===
 ARG SIGNAL_CLI_VERSION=0.14.10
@@ -59,31 +63,30 @@ RUN curl -fsSL -o /tmp/signal-cli.tar.gz \
     && rm -f /tmp/signal-cli.tar.gz
 
 # === Hermes Agent v0.23.1 (exact commit pin) ===
-# Non-interactive skips the setup/gateway wizards; browser and computer-use
-# drivers are skipped for a lean messaging-agent image. HOME is pointed at
-# /tmp for the install so nothing accumulates under /sandbox (the runtime
-# workspace mount would hide it anyway).
+# Installed with HERMES_HOME=/sandbox/.hermes — the FINAL runtime location —
+# so every absolute install-state path hermes records is valid after
+# hermes-seed copies the pristine home there on first boot. The finished home
+# is then moved to /opt/hermes-pristine (image-owned seed). HOME points at
+# /tmp for the install so nothing else accumulates under /sandbox.
 ARG HERMES_COMMIT=3b421578588243f920886e6fe79a6faa87ea026e
-ENV HERMES_HOME=/opt/hermes
-RUN mkdir -p /opt/hermes && chown sandbox:sandbox /opt/hermes
+RUN mkdir -p /sandbox/.hermes && chown -R sandbox:sandbox /sandbox
 USER sandbox
-RUN env HOME=/tmp curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o /tmp/hermes-install.sh \
-    && env HOME=/tmp bash /tmp/hermes-install.sh --commit "${HERMES_COMMIT}" \
+RUN env HOME=/tmp HERMES_HOME=/sandbox/.hermes curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o /tmp/hermes-install.sh \
+    && env HOME=/tmp HERMES_HOME=/sandbox/.hermes bash /tmp/hermes-install.sh --commit "${HERMES_COMMIT}" \
          --non-interactive --skip-browser --skip-computer-use \
     && rm -f /tmp/hermes-install.sh
 USER root
-# Publish the hermes command system-wide regardless of where the installer
-# placed it (expected /opt/hermes/bin/hermes; the find is a fallback).
-RUN { [ -x /opt/hermes/bin/hermes ] && ln -sf /opt/hermes/bin/hermes /usr/local/bin/hermes; } \
-    || find /opt/hermes -maxdepth 3 -type f -name hermes -perm -u+x -exec ln -sf {} /usr/local/bin/hermes \; \
-    || { echo "hermes command not found after install" >&2; exit 1; }
+# Move the finished home to the pristine seed location and restore an empty
+# /sandbox for the runtime (the workspace mount covers it anyway).
+RUN mv /sandbox/.hermes /opt/hermes-pristine \
+    && mkdir -p /sandbox/.local/share \
+    && chown -R sandbox:sandbox /sandbox
 
-# === Gateway start script (the sandbox's main process command) ===
+# === Command shim + seed script + gateway start (the sandbox's command surface) ===
+COPY hermes /usr/local/bin/hermes
+COPY hermes-seed /usr/local/bin/hermes-seed
 COPY hermes-gateway-start /usr/local/bin/hermes-gateway-start
-RUN chmod 0755 /usr/local/bin/hermes-gateway-start
-
-# Keep /sandbox owned by the runtime user (installer ran with HOME=/tmp)
-RUN mkdir -p /sandbox/.local/share && chown -R sandbox:sandbox /sandbox
+RUN chmod 0755 /usr/local/bin/hermes /usr/local/bin/hermes-seed /usr/local/bin/hermes-gateway-start
 
 USER sandbox
 

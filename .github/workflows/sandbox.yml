@@ -361,8 +361,10 @@ jobs:
           # extra env — they are baked into the image).
           podman run --rm --entrypoint java "$IMG" -version
           podman run --rm --entrypoint signal-cli "$IMG" --version
-          # hermes command published system-wide and reporting the pinned release
-          HERMES_VERSION="$(podman run --rm --entrypoint hermes "$IMG" --version)"
+          # hermes: the shim seeds the persistent home on first use, then the
+          # launcher must report the pinned release (proves the seed layout +
+          # recorded-path consistency end to end).
+          HERMES_VERSION="$(podman run --rm --entrypoint hermes "$IMG" --version | head -1)"
           echo "hermes version: ${HERMES_VERSION}"
           case "${HERMES_VERSION}" in
             *0.23.1*) ;;
@@ -370,6 +372,7 @@ jobs:
           esac
           # Gateway start script present, executable, and syntax-valid.
           podman run --rm --entrypoint bash "$IMG" -n /usr/local/bin/hermes-gateway-start
+          podman run --rm --entrypoint bash "$IMG" -n /usr/local/bin/hermes-seed
 
   layers-manifest:
     if: github.event_name != 'pull_request'
