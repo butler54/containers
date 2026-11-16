@@ -363,12 +363,13 @@ jobs:
           podman run --rm --entrypoint signal-cli "$IMG" --version
           # hermes: the shim seeds the persistent home on first use, then the
           # launcher must report the pinned release (proves the seed layout +
-          # recorded-path consistency end to end).
-          HERMES_VERSION="$(podman run --rm --entrypoint hermes "$IMG" --version | head -1)"
-          echo "hermes version: ${HERMES_VERSION}"
-          case "${HERMES_VERSION}" in
+          # recorded-path consistency end to end). Match the version anywhere
+          # in the output — seed progress goes to stderr but stay robust.
+          HERMES_OUT="$(podman run --rm --entrypoint hermes "$IMG" --version 2>&1)"
+          echo "hermes version output: ${HERMES_OUT}"
+          case "${HERMES_OUT}" in
             *0.23.1*) ;;
-            *) echo "::error::hermes is expected to be 0.23.1, got '${HERMES_VERSION}'" && exit 1 ;;
+            *) echo "::error::hermes is expected to be 0.23.1, got '${HERMES_OUT}'" && exit 1 ;;
           esac
           # Gateway start script present, executable, and syntax-valid.
           podman run --rm --entrypoint bash "$IMG" -n /usr/local/bin/hermes-gateway-start

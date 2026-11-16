@@ -18,7 +18,7 @@ PRISTINE=/opt/hermes-pristine
 [ -d "$PRISTINE" ] || { echo "hermes-seed: no pristine home at $PRISTINE" >&2; exit 1; }
 
 if [ ! -e "$H/.seeded" ]; then
-  echo "hermes-seed: seeding $H from $PRISTINE (first boot)"
+  echo "hermes-seed: seeding $H from $PRISTINE (first boot)" >&2
   mkdir -p "$H"
   cp -a "$PRISTINE/." "$H/"
   # Stale bytecode from the build interpreter can fail under the runtime
@@ -26,5 +26,5 @@ if [ ! -e "$H/.seeded" ]; then
   find "$H" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
   find "$H" -name '*.pyc' -delete 2>/dev/null || true
   : > "$H/.seeded"
-  echo "hermes-seed: done"
+  echo "hermes-seed: done" >&2
 fi
