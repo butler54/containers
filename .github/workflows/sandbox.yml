@@ -161,6 +161,7 @@ jobs:
           - { dir: speckit,      name: openshell-sandbox-speckit }
           - { dir: speckit-docs, name: openshell-sandbox-speckit-docs }
           - { dir: hermes,       name: openshell-sandbox-hermes }
+          - { dir: rea,          name: openshell-sandbox-rea }
         arch: [amd64, arm64]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     steps:
@@ -193,8 +194,10 @@ jobs:
 
       # The hermes layer carries the hermes-agent checkout + signal-cli +
       # Temurin JRE on top of base — a large build; free runner disk first.
-      - name: Free disk space (hermes layer)
-        if: matrix.image.name == 'openshell-sandbox-hermes'
+      # The rea layer downloads the ~400MB Ghidra release zip (plus the
+      # source tag on arm64 for the native decompiler build) — same need.
+      - name: Free disk space (hermes/rea layer)
+        if: matrix.image.name == 'openshell-sandbox-hermes' || matrix.image.name == 'openshell-sandbox-rea'
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost || true
           df -h /
@@ -241,6 +244,39 @@ jobs:
             mmdc -i out/structurizr-Context.mmd -o out/Context.svg -b white
             test -s out/Context.svg
           '
+
+      - name: Audit REA toolchain (rea, ${{ matrix.arch }})
+        if: matrix.image.name == 'openshell-sandbox-rea'
+        run: |
+          IMG="localhost/openshell-sandbox-rea:latest-${{ matrix.arch }}"
+          # REA CLI at the pinned version
+          REA_OUT="$(podman run --rm --entrypoint rea "$IMG" --version 2>&1)"
+          echo "rea version: ${REA_OUT}"
+          case "${REA_OUT}" in
+            *6.9.0*) ;;
+            *) echo "::error::rea is expected to be 6.9.0, got '${REA_OUT}'" && exit 1 ;;
+          esac
+          # OpenCode registration aligned + Ghidra provider available
+          # (config inspection only — no Ghidra launch here).
+          podman run --rm --entrypoint rea "$IMG" doctor --client opencode --format json | tee rea-doctor.json
+          python3 -c "import json; d=json.load(open('rea-doctor.json')); assert d.get('healthy') is True, d"
+          # Ghidra decompile smoke — the only real proof the native
+          # decompiler works on this arch (fresh import + auto-analysis of
+          # a trivial binary; first Ghidra startup takes minutes).
+          podman run --rm --entrypoint bash "$IMG" -c '
+            set -euxo pipefail
+            cd "$(mktemp -d)"
+            printf "#include <stdio.h>\nint main(void){puts(\"ok\");return 0;}\n" > hello.c
+            gcc -o hello hello.c
+            rea decompile ./hello --procedure main --provider ghidra --format json > decomp.json
+            grep -q puts decomp.json
+          '
+          # Supporting toolchain surface
+          podman run --rm --entrypoint jadx "$IMG" --version
+          podman run --rm --entrypoint apktool "$IMG" --version
+          podman run --rm --entrypoint radare2 "$IMG" -v
+          podman run --rm --entrypoint wasm2wat "$IMG" --version
+          podman run --rm --entrypoint tshark "$IMG" --version
 
       - name: Push layer ${{ matrix.image.name }} (${{ matrix.arch }})
         uses: redhat-actions/push-to-registry@94ade333c38ecc0e60e94785125d9a52ca423b37 # v3
@@ -375,6 +411,69 @@ jobs:
           podman run --rm --entrypoint bash "$IMG" -n /usr/local/bin/hermes-gateway-start
           podman run --rm --entrypoint bash "$IMG" -n /usr/local/bin/hermes-seed
 
+  # ---- PR validation for the rea layer (build-only, no publish) ----
+  # Same shape as speckit-docs/hermes-validate: PRs cannot reference the
+  # not-yet-published base manifest digest, so build FROM the published
+  # base tag and audit the reverse-engineering toolchain the layer
+  # carries — including a real Ghidra decompile, which is the only proof
+  # the arm64 native decompiler (built in-image from the matching source
+  # tag) actually decompiles.
+  rea-validate:
+    if: github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Ensure buildah/podman
+        run: |
+          command -v buildah >/dev/null && command -v podman >/dev/null || \
+            { sudo apt-get update && sudo apt-get install -y buildah podman; }
+
+      - name: Free disk space (rea layer is large)
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost || true
+          df -h /
+
+      - name: Build layer openshell-sandbox-rea (${{ matrix.arch }})
+        uses: redhat-actions/buildah-build@719e3c40d8af9790c23eca13f7daa339f2867034 # v3
+        with:
+          image: openshell-sandbox-rea
+          tags: latest-${{ matrix.arch }}
+          archs: ${{ matrix.arch }}
+          containerfiles: ./sandbox/rea/Containerfile
+          context: ./sandbox/rea
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/openshell-sandbox-base:latest
+
+      - name: Audit REA toolchain (${{ matrix.arch }})
+        run: |
+          IMG="localhost/openshell-sandbox-rea:latest-${{ matrix.arch }}"
+          REA_OUT="$(podman run --rm --entrypoint rea "$IMG" --version 2>&1)"
+          echo "rea version: ${REA_OUT}"
+          case "${REA_OUT}" in
+            *6.9.0*) ;;
+            *) echo "::error::rea is expected to be 6.9.0, got '${REA_OUT}'" && exit 1 ;;
+          esac
+          podman run --rm --entrypoint rea "$IMG" doctor --client opencode --format json | tee rea-doctor.json
+          python3 -c "import json; d=json.load(open('rea-doctor.json')); assert d.get('healthy') is True, d"
+          podman run --rm --entrypoint bash "$IMG" -c '
+            set -euxo pipefail
+            cd "$(mktemp -d)"
+            printf "#include <stdio.h>\nint main(void){puts(\"ok\");return 0;}\n" > hello.c
+            gcc -o hello hello.c
+            rea decompile ./hello --procedure main --provider ghidra --format json > decomp.json
+            grep -q puts decomp.json
+          '
+          podman run --rm --entrypoint jadx "$IMG" --version
+          podman run --rm --entrypoint apktool "$IMG" --version
+          podman run --rm --entrypoint radare2 "$IMG" -v
+          podman run --rm --entrypoint wasm2wat "$IMG" --version
+          podman run --rm --entrypoint tshark "$IMG" --version
+
   layers-manifest:
     if: github.event_name != 'pull_request'
     needs: layers
@@ -390,6 +489,7 @@ jobs:
           - openshell-sandbox-speckit
           - openshell-sandbox-speckit-docs
           - openshell-sandbox-hermes
+          - openshell-sandbox-rea
     runs-on: ubuntu-latest
     steps:
       - name: Ensure podman

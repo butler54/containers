@@ -1,0 +1,266 @@
+# OpenShell sandbox — REA reverse-engineering profile
+#
+# Thin toolchain layer on top of the pre-built base image: REA (rea.tools,
+# npm rea-agents) — reverse-engineering tools for the OpenCode agent — plus
+# the analysis stack it drives:
+#
+#   - Ghidra 12.1.x on JDK 21 (native provider). Official release zips
+#     ship decompiler natives for linux_x86_64 only (Ghidra issue #9364);
+#     on arm64 the native decompiler is built in-image from the matching
+#     source tag — the decompiler is a native C++ child process, so
+#     cross-arch reuse is impossible and Apple Silicon sandboxes (the
+#     primary deployment, podman applehv) need an aarch64 build.
+#   - jadx + apktool (Android), radare2/yara/binwalk/gdb/tshark/exiftool
+#     (apt), pwndbg (gdb plugin, pinned tag), wabt (WASM), and
+#     pwntools/ropper/ROPgadget/mitmproxy (pip into the base image's
+#     shared /opt/venv, whose .pth bridge already exposes packages to
+#     /sandbox/.venv).
+#   - Playwright Chromium for browser observation comes from the base
+#     image; Node for REA's JS/Electron analysis is node24 below.
+#
+# Node 24 lives at /opt/node24 (stable, version-independent path) and
+# shadows the base image's Node 22 via /usr/local/bin symlinks: REA
+# requires node >= 24.22.1 (base ships 22.22.1). REA's MCP registration
+# records absolute node/rea paths, so the stable paths matter.
+#
+# The OpenCode integration is baked by REA's own supported path: `rea
+# setup --client opencode --yes` runs at build time as the sandbox user
+# with OPENCODE_CONFIG_DIR pointed at /sandbox/.config/opencode (the same
+# seeded-into-/sandbox convention as the speckit layer's command
+# bootstrap) and the Ghidra provider env exported, so setup forwards the
+# provider paths into the MCP registration. The bundled skill lands in
+# /sandbox/.agents/skills/reverse-engineer-anything, which OpenCode
+# discovers as a global compatibility source. `rea doctor` gates the
+# build (its Ghidra check reads application.properties + java -version;
+# it does not launch Ghidra).
+#
+# Published as ghcr.io/butler54/openshell-sandbox-rea:latest (multi-arch:
+# linux/amd64, linux/arm64).
+#
+# Version pins (bump via PR, hermes convention):
+#   - eclipse-temurin:21-jdk  — manifest-list digest pin (Dependabot
+#     docker ecosystem bumps it)
+#   - NODE_VERSION             — nodejs.org official binary tarball
+#   - REA_AGENTS_VERSION       — npm rea-agents
+#   - GHIDRA_* (4 ARGs)        — Ghidra release zip + matching source
+#                                tag; the zip SHA256 is verified, and the
+#                                source tag MUST match the release (the
+#                                arm64 decompiler is built from it)
+#   - JADX_VERSION / APKTOOL_VERSION / WABT_VERSION / PNWDBG_TAG
+#
+# No secrets or user-specific config in this image — it is public on
+# ghcr.io. Git identity is injected at sandbox creation by sandboxctl.
+
+# Global-scope ARG: must precede ANY FROM to be usable in FROM lines (an
+# ARG after a FROM is scoped to that stage only — see hermes Containerfile).
+ARG BASE_IMAGE=ghcr.io/butler54/openshell-sandbox-base:latest
+
+# JDK 21 build stage: copied out of the official Temurin image so buildah
+# resolves the right arch from the multi-arch manifest automatically
+# (hermes JRE-25 pattern). Full JDK, not a JRE: Ghidra reads
+# application.java bounds and REA's doctor wants javac resolvable.
+FROM eclipse-temurin:21-jdk@sha256:db5cc6341a1d7bc40cdb51e1f0d9824f3bb2cc8107d29da421dc4df7d11f05f1 AS jdk21
+
+FROM ${BASE_IMAGE}
+
+USER root
+
+# Provided automatically by buildx/buildah (amd64 | arm64). Declared here so
+# RUN steps see it (same pattern as the base Containerfile).
+ARG TARGETARCH
+
+# === System packages: RE toolchain + Ghidra native build deps ===
+# clang/bison/flex stay in the image (not purged after the arm64 Ghidra
+# build): an RE sandbox wants a compiler, and they are the toolchain for
+# rebuilding Ghidra natives on version bumps. tshark is the Wireshark CLI
+# (REA packet-capture guide); exiftool covers file metadata triage.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        radare2 \
+        yara \
+        binwalk \
+        gdb \
+        tshark \
+        libimage-exiftool-perl \
+        clang \
+        bison \
+        flex \
+        unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# === Node 24 (REA requires >= 24.22.1; base ships 22.22.1) ===
+ARG NODE_VERSION=24.22.3
+RUN case "${TARGETARCH}" in \
+       arm64) NODE_ARCH=arm64 ;; \
+       amd64) NODE_ARCH=x64 ;; \
+       *)     echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+     esac && \
+     curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
+       | tar -C /opt -xz && \
+     mv "/opt/node-v${NODE_VERSION}-linux-${NODE_ARCH}" /opt/node24 && \
+     ln -sf /opt/node24/bin/node /usr/local/bin/node && \
+     ln -sf /opt/node24/bin/npm  /usr/local/bin/npm && \
+     ln -sf /opt/node24/bin/npx  /usr/local/bin/npx && \
+     node --version && npm --version
+
+# === REA (rea-agents) — exact-pinned, global install under node24 ===
+# Installed with node24's npm so its prefix is /opt/node24 (kept separate
+# from the base image's system npm prefix /usr). `rea` is symlinked into
+# /usr/local/bin; REA setup prefers the alias when it provably names the
+# entrypoint, giving registrations a version-independent path.
+ARG REA_AGENTS_VERSION=6.9.0
+RUN /opt/node24/bin/npm install -g --no-audit --no-fund "rea-agents@${REA_AGENTS_VERSION}" && \
+    ln -sf /opt/node24/bin/rea /usr/local/bin/rea && \
+    rea --version
+
+# === JDK 21 (Ghidra + jadx + apktool runtime) ===
+# JAVA_HOME is what Ghidra's launchers and REA's registration use; the
+# javac/javac symlinks keep `java`/`javac` on PATH without resetting the
+# image PATH env.
+COPY --from=jdk21 /opt/java/openjdk /opt/java/jdk21
+ENV JAVA_HOME=/opt/java/jdk21
+RUN ln -sf /opt/java/jdk21/bin/java  /usr/local/bin/java && \
+    ln -sf /opt/java/jdk21/bin/javac /usr/local/bin/javac && \
+    ln -sf /opt/java/jdk21/bin/jar   /usr/local/bin/jar && \
+    java -version && javac -version
+
+# === Ghidra 12.1.4 (sha256-verified release zip) ===
+# /opt/ghidra is a version-independent symlink so GHIDRA_INSTALL_DIR and
+# the paths REA bakes into its registration survive version bumps.
+ARG GHIDRA_VERSION=12.1.4
+ARG GHIDRA_BUILD=20260921
+ARG GHIDRA_TAG=Ghidra_12.1.4_build
+ARG GHIDRA_SHA256=ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db
+RUN curl -fsSL -o /tmp/ghidra.zip \
+      "https://github.com/NationalSecurityAgency/ghidra/releases/download/${GHIDRA_TAG}/ghidra_${GHIDRA_VERSION}_PUBLIC_${GHIDRA_BUILD}.zip" \
+    && echo "${GHIDRA_SHA256}  /tmp/ghidra.zip" | sha256sum -c - \
+    && unzip -q /tmp/ghidra.zip -d /opt \
+    && ln -s "/opt/ghidra_${GHIDRA_VERSION}_PUBLIC" /opt/ghidra \
+    && rm -f /tmp/ghidra.zip
+
+# === Ghidra native decompiler — arm64 only ===
+# The release zip ships decompiler natives for linux_x86_64/win_x86_64
+# only. On linux/arm64 the decompiler must be built from the matching
+# source tag (Ghidra issue #9364): the decompiler's Makefile has no
+# aarch64 branch, so ARCH/ARCH_TYPE/OSDIR are overridden on the command
+# line (command-line variables win over the Makefile's assignments), and
+# the stack limit is raised for the C++ template instantiation depth.
+# Verified end-to-end by the community arm64 build recipes; REA expects
+# the result at os/linux_arm_64/decompile (underscored directory name).
+RUN if [ "${TARGETARCH}" = "arm64" ]; then \
+      set -eux; \
+      curl -fsSL -o /tmp/ghidra-src.tar.gz \
+        "https://github.com/NationalSecurityAgency/ghidra/archive/refs/tags/${GHIDRA_TAG}.tar.gz"; \
+      tar -xzf /tmp/ghidra-src.tar.gz -C /tmp; \
+      cd "/tmp/ghidra-${GHIDRA_TAG}/Ghidra/Features/Decompiler/src/decompile/cpp"; \
+      ulimit -s unlimited 2>/dev/null || ulimit -s 65536; \
+      make -j"$(nproc)" ghidra_opt ARCH=aarch64 ARCH_TYPE= OSDIR=linux_arm_64 \
+        CXX="clang++ -std=c++11"; \
+      mkdir -p /opt/ghidra/Ghidra/Features/Decompiler/os/linux_arm_64; \
+      install -m 755 ghidra_opt \
+        /opt/ghidra/Ghidra/Features/Decompiler/os/linux_arm_64/decompile; \
+      rm -rf /tmp/ghidra-src.tar.gz "/tmp/ghidra-${GHIDRA_TAG}"; \
+    fi
+
+# Assert the decompiler exists and actually executes for the build arch.
+# The Ghidra decompiler is a console app that expects its XML protocol on
+# stdin, so with no input it exits 1 — the assertion is that the dynamic
+# loader runs it at all (126/127 would mean a broken or foreign-arch
+# binary) and the ELF machine matches the build arch. A base-image or
+# upstream change that silently breaks the natives must fail the build,
+# not the first investigation.
+RUN if [ "${TARGETARCH}" = "arm64" ]; then \
+       DECOMP_DIR=linux_arm_64; ELF_MACHINE=AArch64; \
+     else \
+       DECOMP_DIR=linux_x86_64; ELF_MACHINE=X86-64; \
+     fi && \
+     DECOMP="/opt/ghidra/Ghidra/Features/Decompiler/os/${DECOMP_DIR}/decompile" && \
+     test -x "$DECOMP" && \
+     readelf -h "$DECOMP" | grep -q "Machine:.*${ELF_MACHINE}" && \
+     { set +e; "$DECOMP" </dev/null >/dev/null 2>&1; rc=$?; set -e; } && \
+     if [ "$rc" -eq 126 ] || [ "$rc" -eq 127 ]; then \
+       echo "ERROR: decompiler failed to execute (rc=${rc})" >&2; exit 1; \
+     fi
+
+ENV GHIDRA_INSTALL_DIR=/opt/ghidra \
+    REA_ANALYSIS_PROVIDER=ghidra
+
+# === jadx (Android/Java decompiler) ===
+ARG JADX_VERSION=1.5.7
+RUN curl -fsSL -o /tmp/jadx.zip \
+      "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip" \
+    && unzip -q /tmp/jadx.zip -d /opt/jadx \
+    && ln -sf /opt/jadx/bin/jadx /usr/local/bin/jadx \
+    && ln -sf /opt/jadx/bin/jadx-gui /usr/local/bin/jadx-gui \
+    && rm -f /tmp/jadx.zip \
+    && jadx --version
+
+# === apktool (Android resources) — executable jar + wrapper ===
+ARG APKTOOL_VERSION=3.0.3
+RUN curl -fsSL -o /opt/apktool.jar \
+      "https://github.com/iBotPeaches/Apktool/releases/download/v${APKTOOL_VERSION}/apktool_${APKTOOL_VERSION}.jar" \
+    && printf '#!/bin/sh\nexec java -jar /opt/apktool.jar "$@"\n' > /usr/local/bin/apktool \
+    && chmod 755 /usr/local/bin/apktool \
+    && apktool --version
+
+# === wabt (WASM: wasm2wat/wat2wasm/wasm-objdump) ===
+ARG WABT_VERSION=1.0.42
+RUN case "${TARGETARCH}" in \
+       arm64) WABT_ARCH=arm64 ;; \
+       amd64) WABT_ARCH=x64 ;; \
+     esac && \
+     curl -fsSL -o /tmp/wabt.tar.gz \
+       "https://github.com/WebAssembly/wabt/releases/download/${WABT_VERSION}/wabt-${WABT_VERSION}-linux-${WABT_ARCH}.tar.gz" \
+    && tar -xzf /tmp/wabt.tar.gz -C /opt \
+    && mv "/opt/wabt-${WABT_VERSION}" /opt/wabt \
+    && for b in /opt/wabt/bin/*; do ln -sf "$b" /usr/local/bin/; done \
+    && rm -f /tmp/wabt.tar.gz \
+    && wasm2wat --version
+
+# === Python RE tooling (shared /opt/venv, base-image docling pattern) ===
+# pwntools pulls capstone along. ropper is deliberately absent: its
+# filebytes dependency is broken on Python 3.14 (uses ast.Str, removed
+# in 3.12) and ROPgadget covers the gadget-search need. Console scripts
+# are symlinked into /usr/local/bin because only the site-packages (via
+# .pth), not /opt/venv/bin, are on the sandbox PATH.
+RUN uv pip install --python /opt/venv/bin/python \
+      pwntools ROPgadget mitmproxy \
+    && uv cache clean \
+    && for b in pwn ROPgadget mitmproxy mitmdump mitmweb; do \
+         ln -sf "/opt/venv/bin/$b" "/usr/local/bin/$b"; \
+       done \
+    && pwn version 2>/dev/null | head -1 \
+    && mitmdump --version 2>/dev/null | head -1
+
+# === pwndbg (gdb plugin, exact-tag pin) ===
+# setup.sh builds the venv under /opt/pwndbg (HOME pointed at /tmp so
+# nothing accumulates under /root or /sandbox). Loaded system-wide via
+# /etc/gdb/gdbinit, which gdb sources before ~/.gdbinit.
+ARG PNWDBG_TAG=2026.10.28
+RUN git clone --depth 1 --branch "${PNWDBG_TAG}" https://github.com/pwndbg/pwndbg.git /opt/pwndbg \
+    && cd /opt/pwndbg && HOME=/tmp ./setup.sh \
+    && rm -rf /opt/pwndbg/.git \
+    && mkdir -p /etc/gdb \
+    && echo 'source /opt/pwndbg/gdbinit.py' >> /etc/gdb/gdbinit \
+    && gdb --batch -ex 'echo pwndbg-loaded\n' 2>&1 | tail -1
+
+# === REA → OpenCode integration (official setup, build-time) ===
+# Runs as the sandbox user so the registration and skill land under
+# /sandbox (seeded into every sandbox's home volume). The provider env
+# exported here is detected by setup and forwarded into the registration.
+# `rea doctor` then gates the build — cheap (config + provider
+# inspection, no Ghidra launch) but proves the registration is aligned
+# and the Ghidra provider is available for this arch.
+USER sandbox
+RUN OPENCODE_CONFIG_DIR=/sandbox/.config/opencode \
+      rea setup --client opencode --yes --format json \
+    && rea doctor --client opencode --format json | tee /tmp/rea-doctor.json \
+    && python3 -c "import json,sys; d=json.load(open('/tmp/rea-doctor.json')); assert d.get('healthy') is True, d" \
+    && cat /sandbox/.config/opencode/opencode.json
+
+USER root
+RUN mkdir -p /sandbox/.ssh /sandbox/.config/gcloud /sandbox/go \
+    && chown -R sandbox:sandbox /sandbox
+
+USER sandbox
+
+ENTRYPOINT ["/bin/bash"]

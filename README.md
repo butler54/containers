@@ -48,6 +48,7 @@ no external registry secret needed):
 | `sandbox/docs`         | `ghcr.io/butler54/openshell-sandbox-docs:latest`         |
 | `sandbox/speckit`      | `ghcr.io/butler54/openshell-sandbox-speckit:latest`      |
 | `sandbox/speckit-docs` | `ghcr.io/butler54/openshell-sandbox-speckit-docs:latest` |
+| `sandbox/rea`          | `ghcr.io/butler54/openshell-sandbox-rea:latest`          |
 
 - **Multi-arch** (`linux/amd64` + `linux/arm64`), built on native GitHub runners
   (`ubuntu-latest` + `ubuntu-24.04-arm`), base first, then the thin layers `FROM` it.
@@ -78,6 +79,25 @@ no external registry secret needed):
   upstream, and it needs a runtime Chromium download the sandbox network policy
   denies). The Structurizr `.war` is sha256-pinned in the Containerfile and
   downloaded at image-build time — no binaries are committed to the repo.
+- **Reverse engineering (rea only):** the `rea` layer adds **REA**
+  (rea.tools / npm `rea-agents`, exact-pinned) — reverse-engineering tools
+  for the OpenCode agent — on a dedicated **Node 24** at `/opt/node24`
+  (REA requires ≥ 24.22.1; base ships 22.22.1), plus the analysis stack it
+  drives: **Ghidra** on a digest-pinned Temurin JDK 21 (the native
+  decompiler is **built from the matching source tag on arm64** — official
+  releases ship linux_x86_64 natives only, and the decompiler is a native
+  C++ child process that cannot be reused cross-arch), **jadx** and
+  **apktool** (Android), radare2/yara/binwalk/gdb+tshark/exiftool (apt),
+  **pwndbg** (pinned tag, loaded via `/etc/gdb/gdbinit`), **wabt** (WASM),
+  and pwntools/ROPgadget/mitmproxy (pip, into the base image's
+  shared `/opt/venv`; ropper is absent — its filebytes dependency is
+  broken on Python 3.14). The OpenCode integration is baked by REA's own
+  supported path: `rea setup --client opencode --yes` runs at build time
+  (seeded under `/sandbox/.config/opencode` + `/sandbox/.agents/skills`,
+  which OpenCode discovers), with the Ghidra provider env forwarded into
+  the MCP registration; `rea doctor` gates the build, and CI audits a real
+  `rea decompile` through Ghidra on both arches — the only real proof the
+  arm64 native decompiler works.
 - **Pinning / updates:** the upstream base is pinned by manifest-list digest and bumped
   by **Dependabot** (`docker` + `github-actions` ecosystems). Raw `curl`-downloaded tools
   in the base (Go, `oc`, helm, `yq`, `glab`, draw.io) track "latest" and are refreshed by
