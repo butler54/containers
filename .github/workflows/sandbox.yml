@@ -439,7 +439,7 @@ jobs:
           df -h /
 
       - name: Build layer openshell-sandbox-rea (${{ matrix.arch }})
-        uses: redhat-actions/buildah-build@719e3c40d8af9790c23eca13f7daa339f2837034 # v3
+        uses: redhat-actions/buildah-build@719e3c40d8af9790c23eca13f7daa339f2867034 # v3
         with:
           image: openshell-sandbox-rea
           tags: latest-${{ matrix.arch }}
