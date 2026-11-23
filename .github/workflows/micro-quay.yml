@@ -7,6 +7,21 @@ on:
   schedule:
     - cron: '0 4 * * *'
 
+concurrency:
+  # One build lane per event class — only the LATEST activity builds.
+  # NOTE: this workflow builds on pushes to main and cron only (no
+  # pull_request trigger), so there is no PR lane.
+  #  - pushes to main share 'main-latest': a newer merge supersedes an older
+  #    queued/running publish (images are latest-tagged only — a superseded
+  #    build is pure runner waste and queue delay)
+  #  - cron keeps per-ref isolation so a scheduled rebuild can never cancel a
+  #    newer push's publish (group cancellation is by run start order, not
+  #    code recency)
+  # Scoped to refs/heads/main so widening the push branch filter can never let
+  # a non-main branch cancel main's publish.
+  group: micro-quay-${{ github.ref == 'refs/heads/main' && 'main-latest' || github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY_USER: rh-ee-chbutler
   IMAGE_REGISTRY: quay.io
