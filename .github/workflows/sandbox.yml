@@ -411,6 +411,23 @@ jobs:
           podman run --rm --entrypoint bash "$IMG" -n /usr/local/bin/hermes-gateway-start
           podman run --rm --entrypoint bash "$IMG" -n /usr/local/bin/hermes-seed
 
+      # Regression guard: the audit above runs as the image's default USER
+      # (998, the pristine tree's owner), which masks read-permission bugs.
+      # OpenShift sandboxes run as an arbitrary uid (SCC), so the seed must
+      # work there too — root-caused 2026-11-23 (minilab docs/hermes-agent.md).
+      - name: Audit seed as arbitrary uid (${{ matrix.arch }})
+        run: |
+          IMG="localhost/openshell-sandbox-hermes:latest-${{ matrix.arch }}"
+          # Rootless podman cannot setresuid to a uid outside the user-namespace
+          # map ("crun: setresuid: Invalid argument"), so map the runner user
+          # onto the target uid with keep-id: the process then genuinely runs as
+          # 1000870000, an arbitrary OpenShift SCC uid that does not own the
+          # pristine tree. Leave the gid mapping to keep-id's default — an
+          # explicit gid= map fails on some runners (crun: writing gid_map).
+          podman run --rm --userns=keep-id:uid=1000870000 --user 1000870000 \
+            --entrypoint sh "$IMG" -c \
+            'set -e; T=$(mktemp -d); cp -a /opt/hermes-pristine/. "$T"/; test -x "$T/hermes-agent/hermes"'
+
   # ---- PR validation for the rea layer (build-only, no publish) ----
   # Same shape as speckit-docs/hermes-validate: PRs cannot reference the
   # not-yet-published base manifest digest, so build FROM the published
