@@ -5,11 +5,11 @@
 # pre-installed into the recorded venv instead.
 #
 # Mirrors hermes v0.23.1 (commit 3b42157) pyproject 'slack' extra:
-#   slack = ["slack-bolt==1.30.0", "slack-sdk==3.45.0", "aiohttp==3.14.5"]
+#   slack = ["slack-bolt==1.30.0", "slack-sdk==3.48.0", "aiohttp==3.14.5"]
 # slack-bolt + slack-sdk are the delta over the [all] venv; aiohttp already
 # ships there (sms extra) and stays owned by hermes' own uv.lock — pinned
 # here only if a future hermes extra requires a newer one. Re-align these
 # pins whenever HERMES_COMMIT bumps. Dependabot (pip ecosystem) manages this
 # file — see .github/dependabot.yml.
 slack-bolt==1.30.0
-slack-sdk==3.45.0
+slack-sdk==3.48.0
