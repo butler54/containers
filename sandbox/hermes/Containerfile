@@ -78,7 +78,16 @@ RUN env HOME=/tmp HERMES_HOME=/sandbox/.hermes curl -fsSL https://hermes-agent.n
 USER root
 # Move the finished home to the pristine seed location and restore an empty
 # /sandbox for the runtime (the workspace mount covers it anyway).
+#
+# a+rX on the pristine tree: it is created by the build user (uid 998) with
+# 0600 files, but OpenShift sandboxes run as an arbitrary uid (e.g.
+# 1000870000) and hermes-seed's `cp -a /opt/hermes-pristine/. /sandbox/.hermes/`
+# must be able to READ the sources. Without this the copy fails at read time
+# (Permission denied) and `set -eu` in hermes-gateway-start kills the main
+# process ~2min after Ready. a+rX grants read (+ traverse on directories) to
+# every uid; no secrets live in this image — it is public on ghcr.io by design.
 RUN mv /sandbox/.hermes /opt/hermes-pristine \
+    && chmod -R a+rX /opt/hermes-pristine \
     && mkdir -p /sandbox/.local/share \
     && chown -R sandbox:sandbox /sandbox
 
