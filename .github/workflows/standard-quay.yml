@@ -9,6 +9,8 @@ on:
       - main
   schedule:
     - cron: '0 4 * * *'
+  # workflow_dispatch: lets a branch be validated before merge — no pull_request trigger exists
+  workflow_dispatch:
 
 concurrency:
   # Only the latest main commit builds; cron stays per-ref.
