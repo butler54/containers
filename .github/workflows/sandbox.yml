@@ -426,7 +426,17 @@ jobs:
           # explicit gid= map fails on some runners (crun: writing gid_map).
           podman run --rm --userns=keep-id:uid=1000870000 --user 1000870000 \
             --entrypoint sh "$IMG" -c \
-            'set -e; T=$(mktemp -d); cp -a /opt/hermes-pristine/. "$T"/; test -x "$T/hermes-agent/hermes"'
+            'set -e; T=$(mktemp -d); cp -a /opt/hermes-pristine/. "$T"/; test -x "$T/hermes-agent/hermes";
+              # Slack extra baked into the home venv: the platform registry
+              # check is importability — prove the seeded venv can import it
+              # as an arbitrary uid (regression guard for both a dropped pin
+              # and broken read perms). PYTHONPATH because the recorded venv
+              # paths are absolute (/sandbox/.hermes/...) and do not resolve
+              # inside the copy; the bundled tools python is standalone.
+              PY="$(echo "$T"/tools/python-*/bin/python3)";
+              SP="$(echo "$T"/installs/*/environments/*/venv/lib/python3*/site-packages)";
+              test -x "$PY" && test -d "$SP";
+              PYTHONPATH="$SP" "$PY" -c "import slack_sdk, slack_bolt, aiohttp"'
 
   # ---- PR validation for the rea layer (build-only, no publish) ----
   # Same shape as speckit-docs/hermes-validate: PRs cannot reference the
