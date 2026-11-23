@@ -17,16 +17,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # One build lane per event class — only the LATEST activity builds.
-  # NOTE: this workflow has no pull_request trigger, so there is no PR lane.
-  #  - pushes to main share 'main-latest': a newer merge supersedes an older
-  #    queued/running publish (images are latest-tagged only, never versioned,
-  #    so a superseded build is pure runner waste)
-  #  - cron/workflow_dispatch keep per-ref isolation so a scheduled rebuild can
-  #    never cancel a newer push's publish (group cancellation is by run start
-  #    order, not code recency)
-  # If a pull_request trigger is ever added here, add a '<workflow>-pr-latest'
-  # arm alongside 'main-latest'.
+  # Only the latest main commit builds; cron stays per-ref.
   group: standard-ghcr-${{ github.ref == 'refs/heads/main' && 'main-latest' || github.ref }}
   cancel-in-progress: true
 

@@ -22,15 +22,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # One build lane per event class — only the LATEST activity builds:
-  #  - all pull_request runs share 'pr-latest': a newer PR push (any PR)
-  #    cancels any in-flight PR build (images are latest-tagged only —
-  #    superseded PR builds are wasted runners)
-  #  - all main pushes share 'main-latest': a newer merge supersedes an
-  #    older queued/running publish
-  #  - cron/workflow_dispatch keep per-ref isolation so a scheduled rebuild
-  #    can never cancel a newer push's publish (and vice versa — group
-  #    cancellation is by run start order, not code recency)
+  # Only the latest PR / latest main commit builds; cron stays per-ref.
   group: sandbox-${{ github.event_name == 'pull_request' && 'pr-latest' || (github.event_name == 'push' && 'main-latest' || github.ref) }}
   cancel-in-progress: true
 
