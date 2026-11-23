@@ -1,3 +1,5 @@
-FROM registry.access.redhat.com/ubi9/ubi@sha256:6636b79fba9e5044360366f189333c30b5ce528efd92c40c68b074592b971fcd
+FROM registry.access.redhat.com/ubi9/podman@sha256:270848e41fc8b357670b28e031c8bc854c06e6471443644c499e547cb65b620c
 
-RUN dnf install -y podman skopeo buildah
+# ubi9/ubi is unresolvable for podman/buildah: appstream serves aardvark-dns
+# epoch 2, netavark needs >= 3. ubi9/podman carries it; base provides podman.
+RUN dnf install -y skopeo buildah
