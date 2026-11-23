@@ -22,7 +22,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: sandbox-${{ github.ref }}
+  # Only the latest PR / latest main commit builds; cron stays per-ref.
+  group: sandbox-${{ github.event_name == 'pull_request' && 'pr-latest' || (github.event_name == 'push' && 'main-latest' || github.ref) }}
   cancel-in-progress: true
 
 env:

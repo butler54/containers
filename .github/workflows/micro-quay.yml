@@ -7,6 +7,11 @@ on:
   schedule:
     - cron: '0 4 * * *'
 
+concurrency:
+  # Only the latest main commit builds; cron stays per-ref.
+  group: micro-quay-${{ github.ref == 'refs/heads/main' && 'main-latest' || github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY_USER: rh-ee-chbutler
   IMAGE_REGISTRY: quay.io

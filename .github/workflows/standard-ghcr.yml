@@ -17,7 +17,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: standard-ghcr-${{ github.ref }}
+  # Only the latest main commit builds; cron stays per-ref.
+  group: standard-ghcr-${{ github.ref == 'refs/heads/main' && 'main-latest' || github.ref }}
   cancel-in-progress: true
 
 env:
