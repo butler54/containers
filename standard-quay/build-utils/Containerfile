@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/podman@sha256:270848e41fc8b357670b28e031c8bc854c06e6471443644c499e547cb65b620c
+FROM registry.access.redhat.com/ubi9/podman@sha256:e129d3fc9acd3751d5a7fe485f5443fa88553e15a33da5526b5abaaf6bcb1946
 
 # ubi9/ubi is unresolvable for podman/buildah: appstream serves aardvark-dns
 # epoch 2, netavark needs >= 3. ubi9/podman carries it; base provides podman.
