@@ -75,6 +75,30 @@ RUN env HOME=/tmp HERMES_HOME=/sandbox/.hermes curl -fsSL https://hermes-agent.n
     && env HOME=/tmp HERMES_HOME=/sandbox/.hermes bash /tmp/hermes-install.sh --commit "${HERMES_COMMIT}" \
          --non-interactive --skip-browser --skip-computer-use \
     && rm -f /tmp/hermes-install.sh
+
+# === Slack platform deps (baked into the home venv; no runtime pypi) ===
+# The gateway's platform registry lazy-installs hermes' 'slack' extra via
+# `uv sync` (pm.extras.ensure_and_bind) on first Slack use — the sandbox
+# egress policy denies pypi by design, so that can never succeed at runtime.
+# The registry check is plain importability (slack_deps_present), so baking
+# the extra's packages into the recorded venv satisfies it with no hermes
+# lockfile state: facts.json stays untouched and `hermes pm doctor` stays
+# green. Pins live in requirements.txt (dependabot 'pip' ecosystem, same
+# pattern as sandbox/base/package.json for the AI CLIs); keep them aligned
+# with the 'slack' extra in hermes-agent's pyproject.toml on HERMES_COMMIT
+# bumps. aiohttp (the extra's third pin) already ships in the [all] venv and
+# stays owned by hermes' uv.lock. --chown so the build user can rm the file
+# from the sticky /tmp; runs as uid 998 like install.sh itself, BEFORE the
+# mv, so the post-mv `chmod -R a+rX /opt/hermes-pristine` covers the new
+# files (they are created 0644 regardless).
+COPY --chown=998:998 requirements.txt /tmp/hermes-slack-requirements.txt
+RUN VENV="$(python3 -c "import json,glob; print(json.load(open(glob.glob('/sandbox/.hermes/installs/*/facts.json')[0]))['packages']['venv']['environment'])")" \
+    && UV="$(echo /sandbox/.hermes/tools/uv-*/uv)" \
+    && env HOME=/tmp HERMES_HOME=/sandbox/.hermes UV_NO_CONFIG=1 \
+         "$UV" pip install --python "$VENV/bin/python" -r /tmp/hermes-slack-requirements.txt \
+    && rm -f /tmp/hermes-slack-requirements.txt \
+    && "$VENV/bin/python" -c "import slack_sdk, slack_bolt, aiohttp"
+
 USER root
 # Move the finished home to the pristine seed location and restore an empty
 # /sandbox for the runtime (the workspace mount covers it anyway).

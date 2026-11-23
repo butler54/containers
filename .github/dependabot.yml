@@ -50,6 +50,26 @@ updates:
       - "dependencies"
       - "sandbox"
 
+  # Slack SDK pins in sandbox/hermes/requirements.txt (slack-bolt, slack-sdk)
+  # — baked into the hermes layer's venv by its Containerfile so the Slack
+  # platform works under the no-pypi sandbox egress policy. Same pattern as
+  # the base image's npm AI-CLI pins: the manifest is the bump source and the
+  # Containerfile installs from it.
+  - package-ecosystem: "pip"
+    directories:
+      - "/sandbox/hermes"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      pip-hermes-slack:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "sandbox"
+
   # GitHub Actions used by the workflows (docker/*, actions/*, redhat-actions/*).
   - package-ecosystem: "github-actions"
     directory: "/"
